@@ -1644,12 +1644,18 @@ body.minimized #collapsed-indicator { display: block; }
 }
 
 #island-capsule:not(.sadb-expanded) #sadb-area::before {
-    content: "sadb";
-    font-size: 13px;
+    content: "SADB";
+    font-size: 17px;
     font-weight: 700;
-    letter-spacing: 0.5px;
+    font-style: italic;
+    letter-spacing: 1.5px;
     flex-shrink: 0;
     line-height: 1;
+    background: linear-gradient(135deg, #e0e0e0 0%, #ffffff 40%, #a8a8a8 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    text-shadow: none;
+    filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.3));
 }
 
 /* 展开态 — 尺寸由 JS 根据手机分辨率动态设置 */
