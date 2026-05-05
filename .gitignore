@@ -36,3 +36,5 @@ target/
 claude-psmux-team/
 release.md
 release.bat
+一键构建脚本.bat
+*.lnk

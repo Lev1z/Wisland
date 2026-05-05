@@ -225,11 +225,10 @@ export function setView(mode: ViewMode, animated = true) {
   setCurrentView(mode);
 
   // 如果从 agent 展开态切走，收起并恢复窗口大小
-  if (previous === "agent" && mode !== "agent" && capsule.classList.contains("agent-expanded")) {
+  const leavingAgentExpanded = previous === "agent" && mode !== "agent" && capsule.classList.contains("agent-expanded");
+  if (leavingAgentExpanded) {
     capsule.classList.remove("agent-expanded");
-    window.setTimeout(() => {
-      void invoke("set_agent_expanded", { expanded: false });
-    }, 380);
+    void invoke("set_agent_expanded", { expanded: false });
   }
 
   // 如果从 lyric 展开态切走，收起
@@ -268,8 +267,10 @@ export function setView(mode: ViewMode, animated = true) {
   }
 
   // 切入 sadb 视图：恢复 idle / expanded 状态和窗口位置
+  // 从 agent 展开态切来时，需要等 agent 收起动画完成（350ms）再进入 sadb
   if (mode === "sadb" && previous !== "sadb") {
-    window.setTimeout(() => onSadbViewEntered(), 50);
+    const delay = leavingAgentExpanded ? 400 : 50;
+    window.setTimeout(() => onSadbViewEntered(), delay);
   }
 
   if (animated) {
