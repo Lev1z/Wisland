@@ -1,33 +1,32 @@
 import { currentView } from "./state";
 import { hidePrivacyPopup, initPrivacy } from "./modules/privacy";
-import { initNoticeUrl } from "./modules/notice-url";
-import { initWeather } from "./modules/weather";
+import { initClock } from "./modules/clock";
 import { initViewSwitcher, showOnlyView, syncCurrentView } from "./modules/view-switcher";
 import { initLyricRenderer } from "./modules/lyric-renderer";
 import { initMusicControls } from "./modules/music-controls";
 import { initMinimizeDrag } from "./modules/minimize-drag";
 import { initCapsuleInteraction } from "./modules/capsule-interaction";
-import { initAgent } from "./modules/agent";
 import { initResizeObserver } from "./modules/resize-observer";
-import { initSearch } from "./modules/search";
-import { initSadb } from "./modules/sadb";
 import { initNoticeQueue } from "./modules/notice-queue";
+import { initCodexStatus } from "./modules/codex-status";
+import { initQuickNote } from "./modules/quick-note";
+import { initCapsuleExpansion } from "./modules/capsule-expansion";
+import { initCodexQuota } from "./modules/codex-quota";
 
-initNoticeUrl();
+initClock();
 initNoticeQueue();
-initWeather();
+initCodexStatus();
+initCodexQuota();
+initQuickNote();
 initPrivacy();
 initViewSwitcher();
+initCapsuleExpansion();
 initLyricRenderer();
 initMusicControls();
 initMinimizeDrag();
 initCapsuleInteraction();
-initAgent();
-initSearch();
-initSadb();
 initResizeObserver();
 
 showOnlyView("time");
 hidePrivacyPopup();
 void syncCurrentView(currentView);
-

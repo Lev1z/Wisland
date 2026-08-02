@@ -90,9 +90,3 @@
     height: calc(var(--music-expanded-h, 420px) + 4px);
     border-radius: 28px;
 }
-
-#island-glow:has(> #island-capsule.agent-expanded) {
-    width: calc(var(--agent-w, 520px) + 4px);
-    height: calc(var(--agent-h, 540px) + 4px);
-    border-radius: 28px;
-}

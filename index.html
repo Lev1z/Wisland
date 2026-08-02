@@ -1,188 +1,127 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
 <head>
-    <meta charset="UTF-8" />
-    <link rel="stylesheet" href="themes/base.css" />
-    <link rel="stylesheet" href="themes/agent-base.css" />
-    <link rel="stylesheet" href="themes/classic.css" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>DynamicIsland</title>
-    <script type="module" src="src/main.ts" defer></script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Wisland</title>
+  <link rel="stylesheet" href="themes/base.css" />
+  <link rel="stylesheet" href="themes/classic.css" />
+  <script type="module" src="/src/main.ts" defer></script>
 </head>
 <body>
-    <div id="island-capsule">
-        <!-- 唯一的活跃视图槽位 -->
-        <div id="current-view"></div>
+  <div id="island-capsule">
+    <div id="current-view"></div>
+    <div id="notice-area" class="overlay-popup"></div>
+    <form id="quick-note-area" class="overlay-popup" autocomplete="off">
+      <input id="quick-note-input" type="text" maxlength="500" placeholder="写入今天的 Obsidian 日记…" aria-label="随手记内容" />
+      <button id="quick-note-save" type="submit">保存</button>
+      <button id="quick-note-cancel" type="button" aria-label="取消">×</button>
+    </form>
 
-        <!-- overlay 弹层（不参与视图切换，内容由 notice-queue.ts 动态渲染） -->
-        <div id="notice-area" class="overlay-popup"></div>
-
-        <div id="agent-confirm-dialog" style="display:none">
-            <div id="agent-confirm-backdrop"></div>
-            <div id="agent-confirm-box">
-                <div id="agent-confirm-text">确定要清空对话历史吗？</div>
-                <div id="agent-confirm-buttons">
-                    <button id="agent-confirm-cancel">取消</button>
-                    <button id="agent-confirm-ok">清空</button>
-                </div>
-            </div>
-        </div>
-
-        <div id="view-switcher">
-            <div id="view-dots"></div>
-        </div>
-
-        <div id="privacy-indicators" aria-hidden="true">
-            <div class="privacy-icon" id="privacy-mic">
-                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M12 14C13.6569 14 15 12.6569 15 11V6C15 4.34315 13.6569 3 12 3C10.3431 3 9 4.34315 9 6V11C9 12.6569 10.3431 14 12 14Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M17 11C17 13.7614 14.7614 16 12 16C9.23858 16 7 13.7614 7 11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M12 16V21" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M9 21H15" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-            </div>
-            <div class="privacy-icon" id="privacy-camera">
-                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M15 8L16.8 6.2C17.1124 5.88757 17.5361 5.71204 17.9775 5.71204C18.8975 5.71204 19.6432 6.45774 19.6432 7.37778V16.6222C19.6432 17.5423 18.8975 18.288 17.9775 18.288C17.5361 18.288 17.1124 18.1124 16.8 17.8L15 16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                    <rect x="4.5" y="7" width="10.5" height="10" rx="2.4" stroke="currentColor" stroke-width="1.8"/>
-                </svg>
-            </div>
-        </div>
+    <div id="view-switcher" aria-label="切换视图">
+      <div id="view-dots"></div>
     </div>
 
-    <!-- 视图暗仓：所有视图元素存放在此，由 JS 按需移入 #current-view -->
-    <div id="view-holder" style="display:none">
-        <div id="time-wrapper" class="content-wrapper">
-            <div id="date-text" class="time-side time-side-left">周三 · 03/11</div>
-            <div id="time-text">00:00:00</div>
-            <div id="weather-text" class="time-side time-side-right">天气获取中...</div>
-        </div>
+    <div id="privacy-indicators" aria-hidden="true">
+      <div class="privacy-icon" id="privacy-mic" title="麦克风正在使用">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 14C13.6569 14 15 12.6569 15 11V6C15 4.34315 13.6569 3 12 3C10.3431 3 9 4.34315 9 6V11C9 12.6569 10.3431 14 12 14Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M17 11C17 13.7614 14.7614 16 12 16C9.23858 16 7 13.7614 7 11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M12 16V21M9 21H15" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div class="privacy-icon" id="privacy-camera" title="摄像头正在使用">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M15 8L16.8 6.2C17.1124 5.88757 17.5361 5.71204 17.9775 5.71204C18.8975 5.71204 19.6432 6.45774 19.6432 7.37778V16.6222C19.6432 17.5423 18.8975 18.288 17.9775 18.288C17.5361 18.288 17.1124 18.1124 16.8 17.8L15 16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          <rect x="4.5" y="7" width="10.5" height="10" rx="2.4" stroke="currentColor" stroke-width="1.8"/>
+        </svg>
+      </div>
+    </div>
+  </div>
 
-        <div id="lyric-area" class="content-wrapper">
-            <!-- 收起态：唱片 + 歌词 + 控制按钮 -->
-            <div class="vinyl-disc" id="vinyl-disc">
-                <div class="vinyl-grooves"></div>
-                <div class="vinyl-cover" id="vinyl-cover"></div>
-                <div class="vinyl-center"></div>
-            </div>
-            <div id="lyric-text-wrap">
-                <div id="lyric-text"><span id="lyric-text-inner"></span></div>
-                <div id="lyric-meta"></div>
-                <!-- 进度条 -->
-                <div class="progress-bar" id="progress-bar">
-                    <div class="progress-fill" id="progress-fill"></div>
-                    <div class="progress-thumb" id="progress-thumb"></div>
-                </div>
-            </div>
-            <div class="media-controls" id="media-controls">
-                <button class="media-btn" id="btn-prev" title="上一曲">
-                    <svg width="14" height="14" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
-                </button>
-                <button class="media-btn play-btn" id="btn-play" title="播放/暂停">
-                    <svg id="icon-play" width="16" height="16" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-                    <svg id="icon-pause" width="16" height="16" viewBox="0 0 24 24" style="display:none"><path d="M6 19h4V5H6zm8-14v14h4V5z"/></svg>
-                </button>
-                <button class="media-btn" id="btn-next" title="下一曲">
-                    <svg width="14" height="14" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6z"/></svg>
-                </button>
-            </div>
-
-            <!-- 展开态：音乐面板 -->
-            <div id="music-panel">
-                <div id="music-panel-header">
-                    <span id="music-panel-title">正在播放</span>
-                </div>
-                <div id="music-panel-body">
-                    <div id="music-panel-cover">
-                        <div id="music-panel-cover-img"></div>
-                    </div>
-                    <div id="music-panel-info">
-                        <div id="music-panel-song"></div>
-                        <div id="music-panel-artist"></div>
-                    </div>
-                </div>
-                <div id="music-panel-lyrics">
-                    <div id="mp-lyric-text">♪</div>
-                </div>
-                <div id="music-panel-progress">
-                    <div class="mp-progress-bar" id="mp-progress-bar">
-                        <div class="mp-progress-fill" id="mp-progress-fill"></div>
-                        <div class="mp-progress-thumb" id="mp-progress-thumb"></div>
-                    </div>
-                    <div class="mp-time">
-                        <span id="mp-time-current">0:00</span>
-                        <span id="mp-time-total">0:00</span>
-                    </div>
-                </div>
-                <div id="music-panel-controls">
-                    <button class="mp-btn" id="mp-prev" title="上一曲">
-                        <svg width="20" height="20" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
-                    </button>
-                    <button class="mp-btn mp-play-btn" id="mp-play" title="播放/暂停">
-                        <svg class="mp-icon-play" width="24" height="24" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-                        <svg class="mp-icon-pause" width="24" height="24" viewBox="0 0 24 24" style="display:none"><path d="M6 19h4V5H6zm8-14v14h4V5z"/></svg>
-                    </button>
-                    <button class="mp-btn" id="mp-next" title="下一曲">
-                        <svg width="20" height="20" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6z"/></svg>
-                    </button>
-                </div>
-                <div id="music-panel-volume">
-                    <svg width="12" height="12" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3z" fill="rgba(255,255,255,0.35)"/></svg>
-                    <div class="mp-volume-bar" id="mp-volume-bar">
-                        <div class="mp-volume-fill" id="mp-volume-fill"></div>
-                        <div class="mp-volume-thumb" id="mp-volume-thumb"></div>
-                    </div>
-                    <svg width="12" height="12" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0014 7.97v8.05A4.48 4.48 0 0016.5 12zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" fill="rgba(255,255,255,0.35)"/></svg>
-                </div>
-            </div>
-        </div>
-
-        <div id="agent-area" class="content-wrapper">
-            <div id="agent-status-bar">
-                <div id="agent-model-icon">✦</div>
-                <div id="agent-model-name"></div>
-                <div id="agent-status-label"></div>
-                <button id="agent-clear-btn" title="清空历史">清空</button>
-            </div>
-            <div id="agent-messages"></div>
-            <div id="agent-input-area">
-                <input type="text" id="agent-input" placeholder="输入消息..." />
-                <button id="agent-send-btn" title="发送">↑</button>
-                <button id="agent-stop-btn" title="停止" style="display:none">■</button>
-            </div>
-        </div>
-
-        <div id="search-area" class="content-wrapper">
-            <div id="search-input-wrap">
-                <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                <input type="text" id="search-input" placeholder="搜索..." autocomplete="off" />
-                <div id="search-tools">
-                    <button id="search-prev-btn" class="search-page-btn" type="button" title="上一页" hidden>‹</button>
-                    <span id="search-page-label" hidden>第 1 页</span>
-                    <button id="search-next-btn" class="search-page-btn" type="button" title="下一页" hidden>›</button>
-                    <span id="search-esc-hint">ESC</span>
-                </div>
-            </div>
-            <div id="search-results"></div>
-        </div>
-
-        <div id="sadb-area" class="content-wrapper">
-            <div id="sadb-status-bar">
-                <span id="sadb-device-name">--</span>
-                <span id="sadb-resolution">--</span>
-                <span id="sadb-fps">0 fps</span>
-            </div>
-            <canvas id="sadb-canvas"></canvas>
-            <div id="sadb-controls">
-                <button id="sadb-btn-start">开始</button>
-                <button id="sadb-btn-stop" disabled>停止</button>
-                <span id="sadb-status">空闲</span>
-            </div>
-            <div id="sadb-resize-handle"></div>
-        </div>
+  <div id="view-holder" hidden>
+    <div id="time-wrapper" class="content-wrapper">
+      <div id="codex-quota-ring" class="quota-unknown" role="img" aria-label="Codex 剩余额度未知" title="Codex 剩余额度未知">
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <circle class="quota-track" cx="10" cy="10" r="7.5"></circle>
+          <circle id="codex-quota-progress" cx="10" cy="10" r="7.5"></circle>
+        </svg>
+      </div>
+      <div id="time-text">00:00:00</div>
+      <div id="codex-status-dot" class="status-idle" role="status" aria-label="Codex 空闲" title="Codex 空闲"></div>
     </div>
 
-    <!-- 收起状态的小绿条 -->
-    <div id="collapsed-indicator" title="点击展开"></div>
+    <div id="lyric-area" class="content-wrapper">
+      <div class="vinyl-disc" id="vinyl-disc">
+        <div class="vinyl-grooves"></div>
+        <div class="vinyl-cover" id="vinyl-cover"></div>
+        <div class="vinyl-center"></div>
+      </div>
+      <div id="lyric-text-wrap">
+        <div id="lyric-text"><span id="lyric-text-inner"></span></div>
+        <div id="lyric-meta"></div>
+        <div class="progress-bar" id="progress-bar">
+          <div class="progress-fill" id="progress-fill"></div>
+          <div class="progress-thumb" id="progress-thumb"></div>
+        </div>
+      </div>
+      <div class="media-controls" id="media-controls">
+        <button class="media-btn" id="btn-prev" title="上一曲" aria-label="上一曲">
+          <svg width="14" height="14" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>
+        </button>
+        <button class="media-btn play-btn" id="btn-play" title="播放或暂停" aria-label="播放或暂停">
+          <svg id="icon-play" width="16" height="16" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+          <svg id="icon-pause" width="16" height="16" viewBox="0 0 24 24" style="display:none"><path d="M6 19h4V5H6zm8-14v14h4V5z"/></svg>
+        </button>
+        <button class="media-btn" id="btn-next" title="下一曲" aria-label="下一曲">
+          <svg width="14" height="14" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6z"/></svg>
+        </button>
+      </div>
+
+      <div id="music-panel">
+        <div id="music-panel-header"><span id="music-panel-title">正在播放</span></div>
+        <div id="music-panel-body">
+          <div id="music-panel-cover"><div id="music-panel-cover-img"></div></div>
+          <div id="music-panel-info">
+            <div id="music-panel-song"></div>
+            <div id="music-panel-artist"></div>
+          </div>
+        </div>
+        <div id="music-panel-lyrics"><div id="mp-lyric-text">♪</div></div>
+        <div id="music-panel-progress">
+          <div class="mp-progress-bar" id="mp-progress-bar">
+            <div class="mp-progress-fill" id="mp-progress-fill"></div>
+            <div class="mp-progress-thumb" id="mp-progress-thumb"></div>
+          </div>
+          <div class="mp-time">
+            <span id="mp-time-current">0:00</span>
+            <span id="mp-time-total">0:00</span>
+          </div>
+        </div>
+        <div id="music-panel-controls">
+          <button class="mp-btn" id="mp-prev" title="上一曲" aria-label="上一曲">
+            <svg width="20" height="20" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>
+          </button>
+          <button class="mp-btn mp-play-btn" id="mp-play" title="播放或暂停" aria-label="播放或暂停">
+            <svg class="mp-icon-play" width="24" height="24" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+            <svg class="mp-icon-pause" width="24" height="24" viewBox="0 0 24 24" style="display:none"><path d="M6 19h4V5H6zm8-14v14h4V5z"/></svg>
+          </button>
+          <button class="mp-btn" id="mp-next" title="下一曲" aria-label="下一曲">
+            <svg width="20" height="20" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6z"/></svg>
+          </button>
+        </div>
+        <div id="music-panel-volume">
+          <svg width="12" height="12" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3z" fill="rgba(255,255,255,.35)"/></svg>
+          <div class="mp-volume-bar" id="mp-volume-bar">
+            <div class="mp-volume-fill" id="mp-volume-fill"></div>
+            <div class="mp-volume-thumb" id="mp-volume-thumb"></div>
+          </div>
+          <svg width="12" height="12" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 7.97v8.05A4.48 4.48 0 0 0 16.5 12zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" fill="rgba(255,255,255,.35)"/></svg>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="collapsed-indicator" title="点击展开"></div>
 </body>
 </html>

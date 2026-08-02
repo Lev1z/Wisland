@@ -77,7 +77,6 @@
 
 /* ── 通知 / URL / 隐私 ── */
 #notice-area,
-#notice-area.notice-urllist,
 #privacy-indicators {
     background: linear-gradient(135deg, rgba(255, 255, 255, 0.45), rgba(255, 255, 255, 0.12));
     backdrop-filter: blur(10px) saturate(140%);
@@ -86,9 +85,6 @@
 #notice-area:hover { background: linear-gradient(135deg, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0.2)); }
 .icon-box { background: rgba(255, 255, 255, 0.28); box-shadow: inset 0 0 8px rgba(255, 255, 255, 0.35); }
 .notice-msg { color: rgba(10, 16, 30, 0.75); }
-.url-item { color: rgba(20, 40, 90, 0.72); }
-.url-item:hover { background: rgba(255, 255, 255, 0.35); color: rgba(20, 40, 90, 0.95); }
-
 /* ── 唱片 (收起态) ── */
 .vinyl-disc {
     background: radial-gradient(circle at center,

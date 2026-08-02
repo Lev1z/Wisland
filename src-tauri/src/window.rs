@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
-use tauri::{Emitter, Manager};
+use tauri::Emitter;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::WindowsAndMessaging::*;
 use crate::{logger, IslandState, WIN_W, WIN_H_DEFAULT, TOP_MARGIN, MINIMIZED_W, MINIMIZED_H, SNAP_DURATION_MS, SNAP_FRAME_MS};
@@ -207,14 +207,6 @@ pub(crate) fn animate_resize(
     }
 }
 
-pub(crate) fn get_agent_window_size(size: &str) -> (f64, f64) {
-    match size {
-        "small" => (380.0, 400.0),
-        "large" => (620.0, 640.0),
-        _ => (520.0, 540.0), // medium (default)
-    }
-}
-
 #[tauri::command]
 pub fn start_drag(state: tauri::State<'_, IslandState>) {
     state.is_dragging.store(true, Ordering::Relaxed);
@@ -224,11 +216,7 @@ pub fn start_drag(state: tauri::State<'_, IslandState>) {
 pub fn end_drag(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>) {
     state.is_dragging.store(false, Ordering::Relaxed);
 
-    // 镜像流推送中允许拖动，不自动吸附
-    if state.agent_expanded.load(Ordering::Relaxed)
-        || state.music_expanded.load(Ordering::Relaxed)
-        || state.sadb_mirroring.load(Ordering::Relaxed)
-    {
+    if state.music_expanded.load(Ordering::Relaxed) {
         return;
     }
 
@@ -268,8 +256,7 @@ pub fn sync_window_height(window: tauri::WebviewWindow, state: tauri::State<'_, 
         //logger::debug("Window", "sync_window_height skipped (anim in progress)");
         return;
     }
-    let max_h = if state.sadb_mirroring.load(Ordering::Relaxed) { 1200.0 } else { 700.0 };
-    let new_h = height.max(60.0).min(max_h) + 2.0;//防抖
+    let new_h = height.clamp(60.0, 700.0) + 2.0;
     if let Ok(size) = window.inner_size() {
         let scale = window.scale_factor().unwrap_or(1.0);
         let cur_w = size.width as f64 / scale;
@@ -279,167 +266,33 @@ pub fn sync_window_height(window: tauri::WebviewWindow, state: tauri::State<'_, 
 }
 
 #[tauri::command]
-pub fn sync_window_size(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>, width: f64, height: f64, reposition: Option<bool>) {
+pub fn sync_window_size(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>, width: f64, height: f64, _reposition: Option<bool>) {
     if state.expand_anim_id.load(Ordering::Relaxed) != 0 { return; }
-    let (max_w, max_h) = if state.sadb_mirroring.load(Ordering::Relaxed) {
-        (state.screen_w.max(700.0), 1100.0)
-    } else {
-        (620.0, 700.0)
-    };
-    let new_w = width.max(200.0).min(max_w);
-    let new_h = height.max(60.0).min(max_h);
+    let new_w = width.clamp(200.0, 620.0);
+    let new_h = height.clamp(60.0, 700.0);
     logger::debug("Window", &format!("sync_window_size: w={width:.0}→{new_w:.0} h={height:.0}→{new_h:.0}"));
-    // 只在明确要求居中时（流启动 / 拖拽释放）才重定位，拖拽过程中不移窗口
-    if state.sadb_mirroring.load(Ordering::Relaxed) && reposition.unwrap_or(false) {
-        let scale = window.scale_factor().unwrap_or(1.0);
-        let cur_y = window.outer_position().map(|p| p.y as f64 / scale).unwrap_or(TOP_MARGIN);
-        let new_x = (state.screen_w - new_w) / 2.0;
-        let _ = window.set_position(tauri::LogicalPosition::new(new_x, cur_y));
-    }
     let _ = window.set_size(tauri::LogicalSize::new(new_w, new_h));
 }
 
-/// 强制窗口成为前台窗口，绕过 Windows 前台锁（AttachThreadInput 技巧）
-pub(crate) fn force_foreground(hwnd: HWND) {
-    use windows::Win32::System::Threading::{GetCurrentThreadId, AttachThreadInput};
-    use windows::Win32::UI::WindowsAndMessaging::{
-        GetForegroundWindow, GetWindowThreadProcessId, SetForegroundWindow, BringWindowToTop,
-    };
-    use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
-    unsafe {
-        let fg = GetForegroundWindow();
-        if fg.0.is_null() {
-            let _ = SetForegroundWindow(hwnd);
-            let _ = BringWindowToTop(hwnd);
-            let _ = SetFocus(Some(hwnd));
-            return;
-        }
-        let fg_thread = GetWindowThreadProcessId(fg, None);
-        let cur_thread = GetCurrentThreadId();
-        let target_thread = GetWindowThreadProcessId(hwnd, None);
-        if fg_thread != 0 && fg_thread != cur_thread {
-            let _ = AttachThreadInput(fg_thread, cur_thread, true);
-        }
-        if target_thread != 0 && target_thread != cur_thread {
-            let _ = AttachThreadInput(target_thread, cur_thread, true);
-        }
-        let _ = SetForegroundWindow(hwnd);
-        let _ = BringWindowToTop(hwnd);
-        let _ = SetFocus(Some(hwnd));
-        if fg_thread != 0 && fg_thread != cur_thread {
-            let _ = AttachThreadInput(fg_thread, cur_thread, false);
-        }
-        if target_thread != 0 && target_thread != cur_thread {
-            let _ = AttachThreadInput(target_thread, cur_thread, false);
-        }
+pub(crate) fn point_in_rounded_rect(
+    x: f64,
+    y: f64,
+    left: f64,
+    top: f64,
+    width: f64,
+    height: f64,
+    radius: f64,
+) -> bool {
+    if x < left || x > left + width || y < top || y > top + height {
+        return false;
     }
-}
 
-#[tauri::command]
-pub fn set_agent_expanded(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>, expanded: bool) {
-    state.agent_expanded.store(expanded, Ordering::Relaxed);
-    let screen_w = state.screen_w;
-    let scale = window.scale_factor().unwrap_or(1.0);
-
-    // 从设置中获取窗口大小档位
-    let size_setting = state.agent_window_size.lock().unwrap().clone();
-    let (agent_w, agent_h) = get_agent_window_size(&size_setting);
-
-    if expanded {
-        // 展开：从当前窗口尺寸动画到 agent 展开尺寸
-        let target_w = agent_w;
-        let target_h = agent_h + 10.0;
-        let target_x = (screen_w - target_w) / 2.0;
-
-        if let Ok(pos) = window.outer_position() {
-            let from_x = pos.x as f64 / scale;
-            let from_y = pos.y as f64 / scale;
-            let (from_w, from_h) = window.inner_size()
-                .map(|s| (s.width as f64 / scale, s.height as f64 / scale))
-                .unwrap_or((WIN_W, WIN_H_DEFAULT));
-            let target_y = from_y;
-
-            let w = window.clone();
-            thread::spawn(move || {
-                animate_resize(&w, from_x, from_y, from_w, from_h, target_x, target_y, target_w, target_h, 350.0);
-            });
-        } else {
-            let _ = window.set_size(tauri::LogicalSize::new(target_w, target_h));
-        }
-    } else {
-        // 收起：从 agent 展开尺寸动画缩小到默认尺寸，然后 snap_back 到顶部
-        if let Ok(pos) = window.outer_position() {
-            let from_x = pos.x as f64 / scale;
-            let from_y = pos.y as f64 / scale;
-            let (from_w, from_h) = window.inner_size()
-                .map(|s| (s.width as f64 / scale, s.height as f64 / scale))
-                .unwrap_or((agent_w, agent_h + 10.0));
-            // 缩小后保持中心不变
-            let center_x = from_x + from_w / 2.0;
-            let target_x = center_x - WIN_W / 2.0;
-            let target_y = from_y;
-            let target_w = WIN_W;
-            let target_h = WIN_H_DEFAULT;
-
-            let home_x = (screen_w - WIN_W) / 2.0;
-            let w = window.clone();
-            thread::spawn(move || {
-                animate_resize(&w, from_x, from_y, from_w, from_h, target_x, target_y, target_w, target_h, 350.0);
-                // 缩小完成后吸附回顶部
-                snap_back(&w, target_x, target_y, home_x, TOP_MARGIN);
-            });
-        } else {
-            let _ = window.set_size(tauri::LogicalSize::new(WIN_W, WIN_H_DEFAULT));
-        }
-    }
-}
-
-#[tauri::command]
-pub fn set_sadb_expanded(_window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>, expanded: bool) {
-    state.sadb_expanded.store(expanded, Ordering::Relaxed);
-    if expanded {
-        // 流开始，清除待机 flag
-        state.sadb_idle.store(false, Ordering::Relaxed);
-    }
-    // 窗口大小由前端 autoFitWindow + ResizeObserver 统一管理
-}
-
-/// sadb 待机面板：进入时动画到顶部居中 + 420×430 尺寸；退出时动画回默认并吸顶
-#[tauri::command]
-pub fn sadb_set_idle(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>, idle: bool) {
-    state.sadb_idle.store(idle, Ordering::Relaxed);
-    let screen_w = state.screen_w;
-    let scale = window.scale_factor().unwrap_or(1.0);
-    let home_x = (screen_w - WIN_W) / 2.0;
-
-    if idle {
-        // 流结束/主动展开待机面板：动画移回顶部并调整到待机尺寸
-        let target_h = 430.0; // 420px capsule + 10px body padding
-        if let Ok(pos) = window.outer_position() {
-            let from_x = pos.x as f64 / scale;
-            let from_y = pos.y as f64 / scale;
-            let (from_w, from_h) = window.inner_size()
-                .map(|s| (s.width as f64 / scale, s.height as f64 / scale))
-                .unwrap_or((WIN_W, WIN_H_DEFAULT));
-            let w = window.clone();
-            thread::spawn(move || {
-                animate_resize(&w, from_x, from_y, from_w, from_h, home_x, TOP_MARGIN, WIN_W, target_h, 350.0);
-            });
-        }
-    } else {
-        // 收起待机面板回胶囊：动画到默认尺寸并确保吸顶居中
-        if let Ok(pos) = window.outer_position() {
-            let from_x = pos.x as f64 / scale;
-            let from_y = pos.y as f64 / scale;
-            let (from_w, from_h) = window.inner_size()
-                .map(|s| (s.width as f64 / scale, s.height as f64 / scale))
-                .unwrap_or((WIN_W, 430.0));
-            let w = window.clone();
-            thread::spawn(move || {
-                animate_resize(&w, from_x, from_y, from_w, from_h, home_x, TOP_MARGIN, WIN_W, WIN_H_DEFAULT, 300.0);
-            });
-        }
-    }
+    let radius = radius.min(width / 2.0).min(height / 2.0).max(0.0);
+    let nearest_x = x.clamp(left + radius, left + width - radius);
+    let nearest_y = y.clamp(top + radius, top + height - radius);
+    let dx = x - nearest_x;
+    let dy = y - nearest_y;
+    dx * dx + dy * dy <= radius * radius
 }
 
 #[tauri::command]
@@ -552,6 +405,7 @@ pub fn show_context_menu(app: tauri::AppHandle, window: tauri::WebviewWindow) {
 
         // 创建菜单
         let Ok(h_menu) = CreatePopupMenu() else { return };
+        let _ = AppendMenuW(h_menu, MF_STRING, 3, windows::core::w!("随手记"));
 
         // 添加菜单项
         let _ = AppendMenuW(h_menu, MF_STRING, 1, windows::core::w!("收起"));
@@ -585,21 +439,10 @@ pub fn show_context_menu(app: tauri::AppHandle, window: tauri::WebviewWindow) {
                 crate::settings::open_settings(app);
             });
         }
+        3 => {
+            let _ = app.emit("context-menu-action", "quick-note");
+        }
         _ => {}
-    }
-}
-
-#[tauri::command]
-pub fn get_pending_urls(state: tauri::State<'_, IslandState>) -> Vec<String> {
-    state.pending_url.lock().unwrap().clone()
-}
-
-#[tauri::command]
-pub fn set_interacting(state: tauri::State<'_, IslandState>, active: bool) {
-    state.is_interacting.store(active, Ordering::Relaxed);
-    if active {
-        // 用户正在交互，保持展开，取消通知状态让鼠标线程不干扰
-        state.is_notifying.store(true, Ordering::Relaxed);
     }
 }
 
@@ -615,55 +458,33 @@ pub fn dismiss_island(state: tauri::State<'_, IslandState>, window: tauri::Webvi
 #[tauri::command]
 pub fn set_current_view(state: tauri::State<'_, IslandState>, view: String) {
     let normalized = match view.as_str() {
-        "time" | "lyric" | "agent" | "search" | "sadb" => view,
+        "time" | "lyric" => view,
         _ => "time".to_string(),
     };
     *state.current_view.lock().unwrap() = normalized;
 }
 
 #[tauri::command]
-pub fn open_email_window(app: tauri::AppHandle, uid: Option<String>) {
-    logger::debug("Window", &format!("open_email_window invoked: uid={}", uid.as_deref().unwrap_or("(none)")));
-    let app_for_task = app.clone();
-    tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(Duration::from_millis(30)).await;
-        open_email_window_inner(app_for_task, uid);
-    });
+pub fn set_interacting(state: tauri::State<'_, IslandState>, active: bool) {
+    state.is_interacting.store(active, Ordering::Relaxed);
+    state.is_expanded.store(active, Ordering::Relaxed);
 }
 
-pub(crate) fn open_email_window_inner(app: tauri::AppHandle, uid: Option<String>) {
-    logger::debug("Window", &format!("open_email_window_inner: uid={}", uid.as_deref().unwrap_or("(none)")));
-    // 如果已有 email 窗口则聚焦
-    if let Some(win) = app.get_webview_window("email") {
-        logger::debug("Window", "open_email_window: focusing existing email window");
-        let _ = win.set_focus();
-        if let Some(uid) = uid {
-            logger::debug("Window", &format!("open_email_window: emitting email-open-uid uid={uid}"));
-            let _ = win.emit("email-open-uid", uid);
-        }
-        return;
-    }
-    let url = uid
-        .as_ref()
-        .map(|uid| format!("email.html?uid={uid}"))
-        .unwrap_or_else(|| "email.html".to_string());
-    logger::debug("Window", &format!("open_email_window: creating email window url={url}"));
-    let builder = tauri::WebviewWindowBuilder::new(
-        &app,
-        "email",
-        tauri::WebviewUrl::App(url.into()),
-    )
-    .title("邮件")
-    .inner_size(960.0, 640.0)
-    .min_inner_size(720.0, 480.0)
-    .center()
-    .decorations(true)
-    .resizable(true);
+#[tauri::command]
+pub fn get_is_expanded(state: tauri::State<'_, IslandState>) -> bool {
+    state.is_expanded.load(Ordering::Relaxed)
+}
 
-    logger::debug("Window", "open_email_window: builder.build start");
-    match builder.build() {
-        Ok(_) => logger::info("Window", "email window opened"),
-        Err(e) => logger::info("Window", &format!("failed to open email window: {e}")),
+#[cfg(test)]
+mod tests {
+    use super::point_in_rounded_rect;
+
+    #[test]
+    fn rounded_capsule_hit_test_excludes_transparent_corners() {
+        assert!(point_in_rounded_rect(70.0, 1.0, 0.0, 0.0, 140.0, 50.0, 25.0));
+        assert!(point_in_rounded_rect(1.0, 25.0, 0.0, 0.0, 140.0, 50.0, 25.0));
+        assert!(!point_in_rounded_rect(1.0, 1.0, 0.0, 0.0, 140.0, 50.0, 25.0));
+        assert!(!point_in_rounded_rect(141.0, 25.0, 0.0, 0.0, 140.0, 50.0, 25.0));
     }
 }
 

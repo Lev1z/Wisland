@@ -50,7 +50,7 @@ fn get_sender() -> &'static Sender<LogMsg> {
 
         let log_dir: PathBuf = dirs::config_dir()
             .unwrap_or_else(|| PathBuf::from("."))
-            .join("dynamic-island")
+            .join("wisland")
             .join("log");
         let _ = std::fs::create_dir_all(&log_dir);
 

@@ -35,15 +35,11 @@
 .time-side-right { color: rgba(255, 255, 255, 0.65); }
 #time-text       { color: white; }
 
-/* ── 通知 / URL 弹层 ── */
+/* ── 通知弹层 ── */
 #notice-area               { background: #000; }
 #notice-area:hover         { background: rgba(0, 0, 0, 0.92); }
 .icon-box                  { background: rgba(255, 255, 255, 0.08); }
 .notice-msg                { color: rgba(255, 255, 255, 0.9); }
-#notice-area.notice-urllist { background: #000; }
-.url-item                  { color: #8ab4f8; }
-.url-item:hover            { background: rgba(255, 255, 255, 0.08); color: #aecbfa; }
-
 /* ── 唱片 (收起态) ── */
 .vinyl-disc {
     background: radial-gradient(circle at center,

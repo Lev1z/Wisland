@@ -1,16 +1,5 @@
 import type { ViewMode, PrivacyUsagePayload } from "./types";
 
-// --- 通知 / URL ---
-
-export let noticeTimer: number | null = null;
-export function setNoticeTimer(v: number | null) { noticeTimer = v; }
-
-export let pendingUrls: string[] = [];
-export function setPendingUrls(v: string[]) { pendingUrls = v; }
-
-export let isShowingUrlList = false;
-export function setIsShowingUrlList(v: boolean) { isShowingUrlList = v; }
-
 // --- 音乐 / 播放 ---
 
 export let isMusicPlaying = false;
@@ -19,7 +8,7 @@ export function setIsMusicPlaying(v: boolean) { isMusicPlaying = v; }
 export let isPlaying = false;
 export function setIsPlaying(v: boolean) { isPlaying = v; }
 
-export let lyricMode = "lyric"; // "off" | "info" | "lyric"
+export let lyricMode = "off"; // "off" | "info" | "lyric"
 export function setLyricMode(v: string) { lyricMode = v; }
 
 export let currentDurationMs = 0; // 歌曲总时长
@@ -81,29 +70,6 @@ export function setIsMinimizeAnimating(v: boolean) { isMinimizeAnimating = v; }
 
 export let prevLineMap: Map<string, HTMLElement> = new Map();
 export function setPrevLineMap(v: Map<string, HTMLElement>) { prevLineMap = v; }
-
-// --- AI Agent 相关状态 ---
-
-export let aiEnabled = false;
-export function setAiEnabled(v: boolean) { aiEnabled = v; }
-
-export let aiGenerating = false;
-export function setAiGenerating(v: boolean) { aiGenerating = v; }
-
-export let currentAssistantMessage: HTMLDivElement | null = null;
-export function setCurrentAssistantMessage(v: HTMLDivElement | null) { currentAssistantMessage = v; }
-
-export let currentAssistantRawText = "";
-export function setCurrentAssistantRawText(v: string) { currentAssistantRawText = v; }
-
-export let currentThinkingSection: HTMLDivElement | null = null;
-export function setCurrentThinkingSection(v: HTMLDivElement | null) { currentThinkingSection = v; }
-
-export let thinkingStartTime = 0;
-export function setThinkingStartTime(v: number) { thinkingStartTime = v; }
-
-export let thinkingTimer: number | null = null;
-export function setThinkingTimer(v: number | null) { thinkingTimer = v; }
 
 // --- 视图 ---
 
@@ -189,14 +155,5 @@ export const DRAG_THRESHOLD = 5; // 像素，超过此距离才算拖动
 export let skipResizeSync = false;
 export function setSkipResizeSync(v: boolean) { skipResizeSync = v; }
 
-export let agentClickTimer: number | null = null;
-export function setAgentClickTimer(v: number | null) { agentClickTimer = v; }
-
-export let sadbClickTimer: number | null = null;
-export function setSadbClickTimer(v: number | null) { sadbClickTimer = v; }
-
 export let volThrottleTimer: number | null = null;
 export function setVolThrottleTimer(v: number | null) { volThrottleTimer = v; }
-
-export let currentAssistantContainer: HTMLDivElement | null = null;
-export function setCurrentAssistantContainer(v: HTMLDivElement | null) { currentAssistantContainer = v; }

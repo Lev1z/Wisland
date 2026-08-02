@@ -1,680 +1,142 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>灵动岛 - 设置</title>
-  <link rel="stylesheet" href="src/settings.css" />
+  <title>Wisland 设置</title>
+  <link rel="stylesheet" href="/src/settings.css" />
 </head>
 <body>
-  <div class="container">
+  <main class="settings-shell">
     <aside class="sidebar">
-      <div class="sidebar-header">
-        <h1>灵动岛</h1>
-        <p>设置</p>
+      <div class="brand">
+        <div class="brand-mark">W</div>
+        <div><h1>Wisland</h1><p>轻量桌面状态中心</p></div>
       </div>
-      <nav class="nav-list">
-        <div class="nav-item active" data-page="general">常规设置</div>
-        <div class="nav-item" data-page="music">音乐</div>
-        <div class="nav-item" data-page="weather">天气</div>
-        <div class="nav-item" data-page="ai">AI Agent</div>
-        <div class="nav-item" data-page="clipboard-links">剪贴板与链接</div>
-        <div class="nav-item" data-page="email">邮件</div>
-        <div class="nav-item" data-page="sadb">ADB 镜像</div>
-        <div class="nav-item" data-page="plugins">插件管理</div>
-        <div class="nav-item" data-page="blacklist">黑名单</div>
-        <div class="nav-item" data-page="about">关于与更新</div>
+      <nav aria-label="设置分类">
+        <button class="nav-item active" data-page="general">常规</button>
+        <button class="nav-item" data-page="music">音乐</button>
+        <button class="nav-item" data-page="codex">Codex</button>
+        <button class="nav-item" data-page="obsidian">Obsidian</button>
+        <button class="nav-item" data-page="behavior">行为</button>
+        <button class="nav-item" data-page="about">关于</button>
       </nav>
+      <div class="sidebar-foot">Wisland 0.1.0</div>
     </aside>
 
-    <div class="content">
+    <section class="content">
       <header class="content-header">
-        <h2 id="page-title">常规设置</h2>
-        <p id="page-desc">配置快捷键和外观选项。</p>
+        <div><h2 id="page-title">常规</h2><p id="page-description">只保留日常常驻真正需要的选项。</p></div>
+        <span id="save-status" role="status"></span>
       </header>
 
       <div class="content-body">
-        <!-- 常规设置页面 -->
-        <div class="page active" id="page-general">
+        <section class="page active" id="page-general">
           <div class="setting-group">
-            <div class="setting-group-title">快捷键</div>
-            <div class="setting-item">
-              <div class="setting-label">
-                <h3>打开链接快捷键</h3>
-                <p>点击输入框后直接按组合键录入。</p>
-              </div>
-              <div class="setting-control">
-                <input id="shortcut-input" class="input shortcut" type="text" value="Alt+O" readonly />
-              </div>
-            </div>
-            <div class="setting-item">
-              <div class="setting-label">
-                <h3>搜索快捷键</h3>
-                <p>点击输入框后直接按组合键录入，默认 Alt+Space。</p>
-              </div>
-              <div class="setting-control">
-                <input id="search-shortcut-input" class="input shortcut" type="text" value="Alt+Space" readonly />
-              </div>
-            </div>
+            <h3>启动与外观</h3>
+            <label class="setting-row">
+              <span><strong>开机自启</strong><small>登录 Windows 后自动启动 Wisland。</small></span>
+              <input id="auto-start" type="checkbox" class="toggle" />
+            </label>
+            <label class="setting-row">
+              <span><strong>收起指示器颜色</strong><small>胶囊最小化后的小横条颜色。</small></span>
+              <input id="indicator-color" type="color" value="#2edb67" />
+            </label>
           </div>
+        </section>
 
+        <section class="page" id="page-music">
           <div class="setting-group">
-            <div class="setting-group-title">系统</div>
-            <div class="setting-item">
-              <div class="setting-label">
-                <h3>开机自启</h3>
-                <p>Windows 启动时自动运行灵动岛。</p>
-              </div>
-              <div class="setting-control">
-                <label class="switch">
-                  <input type="checkbox" id="auto-start-toggle" />
-                  <span class="slider"></span>
-                </label>
-              </div>
-            </div>
+            <h3>SMTC 音乐</h3>
+            <label class="setting-row">
+              <span><strong>展示方式</strong><small>保留歌词能力，但默认可以完全关闭。</small></span>
+              <select id="lyric-mode">
+                <option value="off">关闭</option>
+                <option value="info">仅歌曲信息</option>
+                <option value="lyric">歌曲信息与歌词</option>
+              </select>
+            </label>
+            <label class="setting-row">
+              <span><strong>启用歌词时间补偿</strong><small>允许针对不同播放器保存歌词偏移。</small></span>
+              <input id="lyric-offset-enabled" type="checkbox" class="toggle" />
+            </label>
+            <label class="setting-row">
+              <span><strong>播放器白名单</strong><small>每行填写一个 SMTC 应用标识；留空表示不限制。</small></span>
+              <input id="smtc-whitelist-enabled" type="checkbox" class="toggle" />
+            </label>
+            <textarea id="smtc-whitelist" rows="6" placeholder="cloudmusic.exe&#10;qqmusic.exe"></textarea>
           </div>
+        </section>
 
+        <section class="page" id="page-codex">
           <div class="setting-group">
-            <div class="setting-group-title">外观</div>
-            <div class="setting-item">
-              <div class="setting-label">
-                <h3>收起状态指示器颜色</h3>
-                <p>收起后显示的小横条颜色。</p>
-              </div>
-              <div class="setting-control">
-                <input id="indicator-color" class="input" type="color" value="#2edb67" style="width: 60px; height: 32px; padding: 2px; cursor: pointer;" />
-              </div>
+            <h3>任务状态</h3>
+            <div class="setting-row">
+              <span><strong>Codex Hooks</strong><small>在任务开始与结束时写入本地状态，Wisland 只读取状态文件。</small></span>
+              <span id="codex-hook-state" class="status-pill">未检测</span>
             </div>
+            <div class="button-row">
+              <button id="install-codex-hooks" class="primary-button" type="button">安装 / 修复 Hooks</button>
+              <button id="clear-codex-status" class="secondary-button compact" type="button">清除状态</button>
+            </div>
+            <p class="setting-hint">只会维护 ~/.codex/config.toml 中标记为 Wisland 的区块，不会覆盖其他 Codex 设置。安装后需要重启 Codex。</p>
           </div>
-        </div>
+        </section>
 
-        <!-- 音乐页面 -->
-        <div class="page" id="page-music">
+        <section class="page" id="page-obsidian">
           <div class="setting-group">
-            <div class="setting-group-title">歌词</div>
-
-            <div class="setting-item">
-              <div class="setting-label">
-                <h3>网易云音乐用户第一次使用请先去插件管理安装插件</h3>
-                <p>音乐依赖SMTC协议和开放api</p>
-              </div>
-              <div class="setting-control">
-                <button type="button" class="btn" data-nav-to="plugins">去插件管理</button>
-              </div>
-            </div>
-            
-            <div class="setting-item">
-              <div class="setting-label">
-                <h3>歌词显示模式</h3>
-                <p>控制收起状态下的音乐展示策略。</p>
-              </div>
-              <div class="setting-control">
-                <select id="lyric-mode" class="select">
-                  <option value="lyric">显示歌词</option>
-                  <option value="info">仅歌曲信息</option>
-                  <option value="off">关闭</option>
-                </select>
-              </div>
-            </div>
-
-            <div class="setting-item">
-              <div class="setting-label">
-                <h3>歌词偏移补偿</h3>
-                <p>补偿请求歌词或 SMTC 带来的延迟，默认启用。</p>
-              </div>
-              <div class="setting-control">
-                <label class="switch">
-                  <input type="checkbox" id="lyric-offset-enabled" checked />
-                  <span class="slider"></span>
-                </label>
-              </div>
-            </div>
-
-            <div class="setting-item">
-              <div class="setting-label">
-                <h3>按播放器配置歌词补偿</h3>
-                <p>每个播放器单独存储，默认 0ms；进入后点 ±0.5s 即时生效（范围 ±3s）。</p>
-              </div>
-              <div class="setting-control">
-                <button type="button" class="btn" data-nav-to="lyric-offset">打开</button>
-              </div>
-            </div>
-
-
-            <div class="setting-item">
-              <div class="setting-label">
-                <h3>歌词获取方式: 内置库</h3>
-                <p>已经转移其他方法至此获取方式</p>
-              </div>
-            </div>
-
-            <div class="setting-item">
-              <div class="setting-label">
-                <h3>SMTC 白名单</h3>
-                <p>只允许白名单中的 app_id 命中 SMTC（适合多播放器环境）。</p>
-              </div>
-              <div class="setting-control">
-                <label class="switch">
-                  <input type="checkbox" id="smtc-whitelist-enabled" />
-                  <span class="slider"></span>
-                </label>
-              </div>
-            </div>
-
-            <div class="setting-item" id="smtc-whitelist-content-group" style="display: block; border: none; padding: 0;">
-              <div class="setting-label" style="margin-bottom: 12px;">
-                <p>小白勿动</p>
-              </div>
-              <div style="display:flex;gap:8px;margin-bottom:12px;">
-                <input id="smtc-whitelist-input" class="input" type="text" placeholder="输入 app_id，如 cloudmusic.exe" style="flex:1;" />
-                <button id="smtc-whitelist-add-btn" class="btn btn-primary">添加</button>
-              </div>
-              <div id="smtc-whitelist-list" style="display:flex;flex-direction:column;gap:6px;"></div>
-            </div>
-
-            
+            <h3>随手记</h3>
+            <label class="field-row">
+              <span><strong>Vault 路径</strong><small>填写包含 .obsidian 文件夹的笔记库根目录。</small></span>
+              <input id="obsidian-vault-path" type="text" placeholder="C:\Notes\My Vault" />
+            </label>
+            <label class="field-row">
+              <span><strong>每日笔记目录</strong><small>相对于 Vault；不存在时会自动创建。</small></span>
+              <input id="obsidian-daily-notes-dir" type="text" placeholder="Daily" />
+            </label>
+            <p class="setting-hint">保存设置后，在灵动岛上右键选择“随手记”，内容会追加到 YYYY-MM-DD.md。</p>
           </div>
-        </div>
+        </section>
 
-        <!-- 歌词补偿·按播放器（二级页面，不在侧栏显示） -->
-        <div class="page" id="page-lyric-offset">
+        <section class="page" id="page-behavior">
           <div class="setting-group">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-              <button type="button" class="btn" data-nav-to="music">← 返回音乐</button>
-              <span id="lyric-offset-status" style="font-size:12px;color:var(--text-secondary);"></span>
-            </div>
-            <div class="setting-item">
-              <div class="setting-label">
-                <h3>歌词偏移补偿</h3>
-                <p>总开关；关闭后所有播放器的补偿立即失效。</p>
-              </div>
-              <div class="setting-control">
-                <label class="switch">
-                  <input type="checkbox" id="lyric-offset-enabled-sub" checked />
-                  <span class="slider"></span>
-                </label>
-              </div>
-            </div>
-            <div class="setting-item" style="display:block;border:none;padding:0;">
-              <div class="setting-label" style="margin-bottom:12px;">
-                <h3>各播放器补偿时长</h3>
-                <p>点击 ± 立即生效并保存；步长 0.5s，范围 ±3s。新播放器第一次被检测到时自动以 0ms 入表。</p>
-              </div>
-              <div id="lyric-offset-empty" style="color:var(--text-secondary);padding:12px 0;">
-                还没有检测到播放器，先播放一首歌再回到这里。
-              </div>
-              <div id="lyric-offset-list" style="display:flex;flex-direction:column;gap:8px;"></div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 天气页面 -->
-        <div class="page" id="page-weather">
-          <div class="setting-group">
-            <div class="setting-group-title">天气位置</div>
-            <div class="setting-item" style="display: block; border: none; padding: 0;">
-              <div class="setting-label">
-                <h3>天气位置</h3>
-                <p>手动设置城市以获取更准确的天气。留空则自动定位。</p>
-              </div>
-              <div class="city-search-wrapper" style="margin-top: 8px;">
-                <input id="weather-city-search" class="input" type="text" placeholder="搜索城市，如：北京、上海、Tokyo..." style="width: 100%;" />
-                <div id="city-results" class="city-results"></div>
-              </div>
-              <div id="city-current" class="city-current" style="display: none;">
-                <span>当前：</span>
-                <span id="city-tag" class="city-tag"></span>
-                <button id="clear-city-btn" class="clear-city" type="button">× 清除</button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 剪贴板与链接页面 -->
-        <div class="page" id="page-clipboard-links">
-          <div class="setting-group">
-            <div class="setting-group-title">剪贴板</div>
-            <div class="setting-item">
-              <div class="setting-label">
-                <h3>监听剪贴板链接</h3>
-                <p>复制 URL 时在灵动岛显示快速跳转提示。</p>
-              </div>
-              <div class="setting-control">
-                <label class="switch">
-                  <input type="checkbox" id="clipboard-toggle" checked />
-                  <span class="slider"></span>
-                </label>
-              </div>
-            </div>
-          </div>
-
-          <div class="setting-group">
-            <div class="setting-group-title">链接处理器</div>
-            <div class="setting-item" style="display: block; border: none; padding: 0;">
-              <div class="setting-label">
-                <h3>自定义链接处理器</h3>
-                <p>检测到特定链接时，使用指定应用打开。</p>
-              </div>
-              <div id="link-handlers-list" class="handlers-list"></div>
-              <div class="actions" style="margin-top: 16px;">
-                <button id="add-handler-btn" class="btn btn-primary" type="button">添加处理器</button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-
-        <!-- 邮件页面 -->
-        <div class="page" id="page-email">
-          <div class="setting-group">
-            <div class="setting-group-title">快捷键</div>
-            <div class="setting-item" style="display: block; border: none; padding: 0;">
-              <div class="setting-label">
-                <h3>打开邮箱快捷键</h3>
-                <p>按下此快捷键可快速打开邮箱窗口。点击输入框后按下组合键进行录制。</p>
-              </div>
-              <input id="email-shortcut-input" class="input path" type="text" readonly placeholder="Ctrl+Alt+E" />
-            </div>
+            <h3>自动隐藏</h3>
+            <label class="setting-row">
+              <span><strong>启用进程黑名单</strong><small>全屏或前台程序匹配时隐藏 Wisland。</small></span>
+              <input id="blacklist-enabled" type="checkbox" class="toggle" />
+            </label>
+            <textarea id="blacklist" rows="8" placeholder="game.exe&#10;presentation.exe"></textarea>
           </div>
           <div class="setting-group">
-            <div class="setting-group-title">IMAP 账号</div>
-            <div class="setting-item" style="display: block; border: none; padding: 0;">
-              <div class="setting-label">
-                <h3>用户名</h3>
-                <p>登录邮箱时使用的用户名（通常是完整邮箱地址）。</p>
-              </div>
-              <input id="email-username" class="input path" type="text" placeholder="user@example.com" />
-            </div>
+            <h3>诊断</h3>
+            <label class="setting-row">
+              <span><strong>日志等级</strong><small>开发阶段建议使用 info，排查问题时切换为 debug。</small></span>
+              <select id="log-level">
+                <option value="error">error</option>
+                <option value="warn">warn</option>
+                <option value="info">info</option>
+                <option value="debug">debug</option>
+              </select>
+            </label>
+            <button id="open-log-dir" class="secondary-button" type="button">打开日志目录</button>
           </div>
-          <div class="setting-group">
-            <div class="setting-item" style="display: block; border: none; padding: 0;">
-              <div class="setting-label">
-                <h3>授权码 / 密码</h3>
-                <p>IMAP 登录凭据，部分邮箱需使用专用授权码而非登录密码。</p>
-              </div>
-              <input id="email-auth" class="input path" type="password" placeholder="授权码或密码" />
-            </div>
-          </div>
-          <div class="setting-group">
-            <div class="setting-item" style="display: block; border: none; padding: 0;">
-              <div class="setting-label">
-                <h3>IMAP 服务器地址</h3>
-                <p>如 imap.qq.com、imap.gmail.com 等。</p>
-              </div>
-              <input id="email-address" class="input path" type="text" placeholder="imap.example.com" />
-            </div>
-          </div>
-          <div class="setting-group">
-            <div class="setting-item" style="display: block; border: none; padding: 0;">
-              <div class="setting-label">
-                <h3>端口</h3>
-                <p>IMAP SSL 端口，默认 993。</p>
-              </div>
-              <input id="email-port" class="input path" type="number" min="1" max="65535" value="993" />
-            </div>
-          </div>
-          <div class="setting-group">
-            <div class="setting-group-title">轮询</div>
-            <div class="setting-item" style="display: block; border: none; padding: 0;">
-              <div class="setting-label">
-                <h3>轮询间隔（秒）</h3>
-                <p>后台定时获取最新邮件 UID，UID 变化时弹出通知。默认 1 秒。</p>
-              </div>
-              <input id="email-poll-interval" class="input path" type="number" min="1" step="1" value="1" />
-            </div>
-          </div>
-        </div>
+        </section>
 
-
-        <!-- 插件管理页面 -->
-        <div class="page" id="page-plugins">
-          <div class="setting-group">
-            <div class="setting-group-title">InfLink-rs</div>
-            <div class="setting-item" style="display: block; border: none; padding: 0;">
-              <div class="setting-label">
-                <h3>InfLink-rs 下载教程</h3>
-                <p>仅提供下载教程，不再执行 InfLink 插件文件写入。</p>
-              </div>
-              <div class="mono" id="InfLink-rs-docs-link">https://docs.pyisland.com/guide/tauri-island.html</div>
-              <div class="actions">
-                <button id="open-inflink-btn" class="btn" type="button">打开下载地址</button>
-              </div>
-            </div>
+        <section class="page" id="page-about">
+          <div class="empty-state">
+            <div class="brand-mark large">W</div>
+            <h3>Wisland 0.1.0</h3>
+            <p>基于 tauri-island 精简重构的个人桌面助手壳。当前保留胶囊、音乐、隐私提示、通知和黑名单。</p>
+            <p class="muted">自动更新已停用，避免上游版本覆盖个人定制。</p>
           </div>
-
-          <div class="setting-group">
-            <div class="setting-group-title">PluginMarket</div>
-            <div class="setting-item" style="display: block; border: none; padding: 0;">
-              <div class="setting-label">
-                <h3>PluginMarket main.js 源修复</h3>
-                <p>仅执行源地址替换（旧源 → BetterNCM 官方源）。</p>
-              </div>
-              <div class="input-group">
-                <input id="betterncm-path" class="input path" value="C:\betterncm" />
-                <div class="actions">
-                  <button id="install-betterncm-btn" class="btn btn-primary" type="button">执行源修复</button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- AI Agent 页面 -->
-        <div class="page" id="page-ai">
-          <div class="setting-group">
-            <div class="setting-group-title">API 配置</div>
-            <div class="setting-item" style="display: block; border: none; padding: 0;">
-              <div class="setting-label">
-                <h3>API 地址</h3>
-                <p>OpenAI 兼容的 API 端点地址。</p>
-              </div>
-              <input id="ai-api-url" class="input path" placeholder="https://api.openai.com/v1" />
-            </div>
-          </div>
-
-          <div class="setting-group">
-            <div class="setting-item" style="display: block; border: none; padding: 0;">
-              <div class="setting-label">
-                <h3>API Key</h3>
-                <p>用于身份验证的 API 密钥。</p>
-              </div>
-              <input id="ai-api-key" class="input path" type="password" placeholder="sk-..." />
-            </div>
-          </div>
-
-          <div class="setting-group">
-            <div class="setting-item" style="display: block; border: none; padding: 0;">
-              <div class="setting-label">
-                <h3>模型名称</h3>
-                <p>要使用的模型标识符。</p>
-              </div>
-              <input id="ai-model" class="input path" placeholder="gpt-4o" />
-            </div>
-          </div>
-
-          <div class="setting-group">
-            <div class="setting-group-title">模型检测</div>
-            <div class="setting-item" style="display: block; border: none; padding: 0;">
-              <div class="setting-label">
-                <h3>模型类型检测</h3>
-                <p id="ai-model-type-result">未检测</p>
-              </div>
-              <div class="actions">
-                <button id="ai-detect-btn" class="btn" type="button">检测模型类型</button>
-              </div>
-            </div>
-          </div>
-
-          <div class="setting-group">
-            <div class="setting-group-title">窗口设置</div>
-            <div class="setting-item">
-              <div class="setting-label">
-                <h3>AI 窗口大小</h3>
-                <p>选择展开后的窗口尺寸。</p>
-              </div>
-              <div class="setting-control">
-                <select id="agent-window-size" class="select">
-                  <option value="small">小</option>
-                  <option value="medium">中</option>
-                  <option value="large">大</option>
-                </select>
-              </div>
-            </div>
-          </div>
-        </div>
-        <!-- ADB 镜像页面 -->
-        <div class="page" id="page-sadb">
-          <div class="setting-group">
-            <div class="setting-group-title">连接设置</div>
-            <div class="setting-item" style="display: block; border: none; padding: 0;">
-              <div class="setting-label">
-                <h3>默认 IP 地址</h3>
-                <p>WiFi 连接时的目标设备 IP，留空则仅使用 USB。</p>
-              </div>
-              <input id="sadb-ip" class="input path" placeholder="192.168.1.100" />
-            </div>
-          </div>
-          <div class="setting-group">
-            <div class="setting-item" style="display: block; border: none; padding: 0;">
-              <div class="setting-label">
-                <h3>默认端口</h3>
-                <p>ADB WiFi 连接端口，默认 5555。</p>
-              </div>
-              <input id="sadb-port" class="input path" type="number" placeholder="5555" min="1" max="65535" />
-            </div>
-          </div>
-          <div class="setting-group">
-            <div class="setting-group-title">ADB 工具</div>
-            <div class="setting-item" style="display: block; border: none; padding: 0;">
-              <div class="setting-label">
-                <h3>安装目录</h3>
-                <p>初始化会下载 Android platform-tools，并解压到此目录下。</p>
-              </div>
-              <input id="adb-install-dir" class="input path" type="text" placeholder="ADB 工具安装目录" />
-            </div>
-            <div class="setting-item" style="display: block; border: none; padding: 0;">
-              <div class="setting-label">
-                <h3>ADB 路径</h3>
-                <p>留空时使用系统 PATH 中的 adb；初始化成功后会自动填入 adb.exe 路径。</p>
-              </div>
-              <input id="adb-path" class="input path" type="text" placeholder="adb 或 C:\...\platform-tools\adb.exe" />
-              <div class="actions">
-                <button id="adb-path-from-path-btn" class="btn" type="button">从 PATH 获取</button>
-                <button id="adb-init-btn" class="btn btn-primary" type="button">初始化 ADB</button>
-                <button id="adb-check-btn" class="btn" type="button">命令检验</button>
-                <button id="adb-devices-btn" class="btn" type="button">设备检验</button>
-                <button id="adb-connect-device-btn" class="btn" type="button">连接设备</button>
-                <button id="adb-kill-server-btn" class="btn" type="button">结束adb进程</button>
-              </div>
-              <div id="adb-check-result" class="mono" style="white-space: pre-line;">未检测</div>
-            </div>
-          </div>
-          <div class="setting-group">
-            <div class="setting-group-title">说明</div>
-            <div class="setting-item" style="display: block; border: none; padding: 0;">
-              <div class="setting-label">
-                <p>连接优先级：USB → WiFi。有 USB 设备时优先使用 USB，无 USB 设备时自动使用 IP:Port 进行 WiFi 连接。</p>
-                <p style="margin-top: 8px;">需要 adb 和 scrcpy-server (v3.3.4) 支持。首次使用请确保已安装 adb 工具。</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 黑名单页面 -->
-        <div class="page" id="page-blacklist">
-          <div class="setting-group">
-            <div class="setting-group-title">黑名单开关</div>
-            <div class="setting-item">
-              <div class="setting-label">
-                <div class="setting-label-title">启用黑名单</div>
-                <div class="setting-label-desc">关闭后黑名单列表暂时失效，灵动岛始终显示。</div>
-              </div>
-              <div class="setting-control">
-                <label class="switch"><input type="checkbox" id="blacklist-enabled-toggle" /><span class="slider"></span></label>
-              </div>
-            </div>
-          </div>
-          <div class="setting-group" id="blacklist-content-group">
-            <div class="setting-group-title">黑名单进程</div>
-            <div class="setting-item" style="display: block; border: none; padding: 0;">
-              <div class="setting-label" style="margin-bottom: 12px;">
-                <p>填写进程文件名（如 <code style="background:var(--surface-active);padding:1px 5px;border-radius:4px;font-family:monospace;">game.exe</code>），不区分大小写。焦点窗口或全屏进程匹配时灵动岛自动隐藏。</p>
-              </div>
-              <div style="display:flex;gap:8px;margin-bottom:12px;">
-                <input id="blacklist-input" class="input" type="text" placeholder="输入进程名，如 game.exe" style="flex:1;" />
-                <button id="blacklist-add-btn" class="btn btn-primary">添加</button>
-              </div>
-              <div id="blacklist-list" style="display:flex;flex-direction:column;gap:6px;"></div>
-            </div>
-          </div>
-        </div>
-        <!-- 关于与更新页面 -->
-        <div class="page" id="page-about">
-          <div class="setting-group">
-            <div class="setting-group-title">版本信息</div>
-            <div class="setting-item" style="display: block; border: none; padding: 0;">
-              <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
-                <div style="width: 48px; height: 48px; border-radius: 12px; background: linear-gradient(135deg, #0078d4, #00bcf2); display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
-                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-                </div>
-                <div>
-                  <h3 style="margin-bottom: 2px;">Dynamic Island</h3>
-                  <p style="color: var(--text-secondary);">当前版本: <span id="current-version">获取中...</span></p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="setting-group">
-            <div class="setting-group-title">软件更新</div>
-            <div class="setting-item" style="display: block; border: none; padding: 0;">
-              <div id="update-status" style="margin-bottom: 12px;">
-                <p id="update-status-text" style="color: var(--text-secondary);">点击下方按钮检查是否有新版本。</p>
-              </div>
-
-              <!-- 更新信息卡片（默认隐藏） -->
-              <div id="update-info-card" style="display: none; background: var(--surface-hover); border-radius: var(--radius); padding: 16px; margin-bottom: 12px; border: 1px solid var(--border);">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                  <span id="update-card-title" style="font-weight: 600; color: var(--primary);">🎉 发现新版本</span>
-                  <span id="update-latest-version" style="font-size: 14px; font-weight: 600;"></span>
-                </div>
-                <p id="update-published" style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;"></p>
-                <div id="update-notes" style="font-size: 13px; color: var(--text-secondary); max-height: 150px; overflow-y: auto; white-space: pre-wrap; line-height: 1.6;"></div>
-              </div>
-
-              <!-- 下载进度条（默认隐藏） -->
-              <div id="update-progress-wrapper" style="display: none; margin-bottom: 12px;">
-                <div style="display: flex; justify-content: space-between; font-size: 12px; color: var(--text-secondary); margin-bottom: 4px;">
-                  <span id="update-progress-text">下载中...</span>
-                  <span id="update-progress-percent">0%</span>
-                </div>
-                <div style="width: 100%; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden;">
-                  <div id="update-progress-bar" style="width: 0%; height: 100%; background: var(--primary); border-radius: 3px; transition: width 0.2s ease;"></div>
-                </div>
-              </div>
-
-              <div class="actions" style="gap: 8px;">
-                <button id="check-stable-update-btn" class="btn btn-primary" type="button">稳定版检查更新</button>
-                <button id="check-preview-update-btn" class="btn" type="button">预览版检查更新</button>
-                <button id="download-update-btn" class="btn btn-primary" type="button" style="display: none;">下载更新</button>
-                <button id="open-release-btn" class="btn" type="button" style="display: none;">在浏览器中打开</button>
-              </div>
-            </div>
-          </div>
-
-          <div class="setting-group">
-            <div class="setting-group-title">相关链接</div>
-            <div class="setting-item">
-              <div class="setting-label">
-                <h3>GitHub 仓库</h3>
-                <p>查看源代码、提交 Issue 或参与贡献。</p>
-              </div>
-              <div class="setting-control">
-                <button id="open-github-btn" class="btn" type="button">打开</button>
-              </div>
-            </div>
-            <div class="setting-item">
-              <div class="setting-label">
-                <h3>日志等级</h3>
-                <p>等级越低输出越详细，debug 包含所有日志。</p>
-              </div>
-              <div class="setting-control">
-                <select id="log-level-select" class="select">
-                  <option value="debug">Debug</option>
-                  <option value="info">Info</option>
-                  <option value="warn">Warning</option>
-                </select>
-              </div>
-            </div>
-            <div class="setting-item">
-              <div class="setting-label">
-                <h3>最后一次日志</h3>
-                <p id="log-path-text" style="word-break: break-all; font-size: 12px; color: var(--text-muted);">加载中...</p>
-              </div>
-              <div class="setting-control">
-                <button id="open-log-dir-btn" class="btn" type="button">打开</button>
-              </div>
-            </div>
-          </div>
-        </div>
+        </section>
       </div>
 
-      <!-- 二级配置页面（链接处理器详情）-->
-      <div class="handler-detail-page" id="handler-detail-page">
-        <div class="handler-detail-header">
-          <button class="btn" id="handler-detail-back" type="button">← 返回</button>
-          <h3 id="handler-detail-title">配置处理器</h3>
-        </div>
-        <div class="handler-detail-body">
-          <div class="handler-detail-field">
-            <label>名称</label>
-            <input id="detail-name" type="text" placeholder="如：夸克网盘" />
-            <div class="hint">处理器的显示名称</div>
-          </div>
-          <div class="handler-detail-field">
-            <label>匹配正则</label>
-            <input id="detail-pattern" type="text" placeholder="如：https://pan\.quark\.cn/s/[a-zA-Z0-9]+" />
-            <div class="hint">匹配 URL 的正则表达式</div>
-          </div>
-          <div class="handler-detail-field">
-            <label>应用路径</label>
-            <div class="app-path-row">
-              <input id="detail-app-path" type="text" placeholder="如：C:\Program Files\Quark\quark.exe" />
-              <button id="test-app-btn" class="btn" type="button">测试打开</button>
-            </div>
-            <div class="hint">支持 .exe 可执行文件或 .lnk 快捷方式</div>
-          </div>
-        </div>
-        <div class="handler-detail-footer">
-          <button id="handler-detail-save" class="btn btn-success" type="button">保存</button>
-          <button id="handler-detail-delete" class="btn btn-danger" type="button">删除处理器</button>
-        </div>
-      </div>
-
-      <footer class="footer">
-        <button id="save-btn" class="save-btn" type="button">保存设置</button>
-        <div id="status" class="status"></div>
+      <footer class="content-footer">
+        <button id="save-button" class="primary-button" type="button">保存设置</button>
       </footer>
-    </div>
-  </div>
-  <script>
-    // ==================== 页面导航 ====================
-const pageInfo = {
-  general:          { title: "常规设置",     desc: "配置快捷键和外观选项。" },
-  music:            { title: "音乐",          desc: "配置音乐歌词显示策略。" },
-  "lyric-offset":   { title: "歌词补偿·按播放器", desc: "每个播放器单独存储补偿时长，点 ± 立即生效。" },
-  weather:          { title: "天气",          desc: "配置天气显示位置。" },
-  ai:               { title: "AI Agent",      desc: "配置 OpenAI 兼容的 API 和模型参数。" },
-  "clipboard-links":{ title: "剪贴板与链接", desc: "配置剪贴板监听和链接处理器。" },
-  email:            { title: "邮件",          desc: "配置邮件轮询和通知占位功能。" },
-  plugins:          { title: "插件管理",     desc: "管理 InfLink 和 PluginMarket 相关设置。" },
-  sadb:             { title: "ADB 镜像",     desc: "配置 Android 设备屏幕镜像连接参数。" },
-  blacklist:        { title: "黑名单",        desc: "添加进程名，当焦点窗口或全屏程序匹配时自动隐藏灵动岛。" },
-  about:            { title: "关于与更新",   desc: "查看版本信息和检查软件更新。" },
-};
-
-const navItems = document.querySelectorAll(".nav-item");
-const pages = document.querySelectorAll(".page");
-const pageTitle = document.getElementById("page-title");
-const pageDesc  = document.getElementById("page-desc");
-
-function navigateTo(pageId) {
-  navItems.forEach(n => n.classList.remove("active"));
-  document.querySelector(`.nav-item[data-page="${pageId}"]`)?.classList.add("active");
-  pages.forEach(p => p.classList.remove("active"));
-  document.getElementById(`page-${pageId}`)?.classList.add("active");
-  if (pageTitle) pageTitle.textContent = pageInfo[pageId]?.title ?? "";
-  if (pageDesc)  pageDesc.textContent  = pageInfo[pageId]?.desc  ?? "";
-}
-
-navItems.forEach(item => {
-  item.addEventListener("click", () => navigateTo(item.dataset.page ?? ""));
-});
-
-document.querySelectorAll("[data-nav-to]").forEach(btn => {
-  btn.addEventListener("click", () => navigateTo(btn.dataset.navTo ?? ""));
-});
-  </script>
-  <script type="module" src="src/settings.ts"></script>
+    </section>
+  </main>
+  <script type="module" src="/src/settings.ts"></script>
 </body>
 </html>

@@ -1,26 +1,18 @@
 pub mod logger;
 mod privacy;
-mod clipboard;
-mod betterncm;
 mod lyrics;
-pub mod link_handler;
 mod media;
 pub mod settings;
-pub mod ai;
 mod window;
-mod updater;
-mod ceverything;
-mod sadb;
-mod email;
 mod cc;
-mod tools;
+mod agent_status;
+mod codex_usage;
+mod obsidian;
 
-use std::process::{Command, Stdio};
-use std::os::windows::process::CommandExt;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tauri::{Emitter, Manager};
 
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
@@ -28,13 +20,8 @@ use tauri::tray::TrayIconBuilder;
 use tauri::image::Image;
 use windows::Win32::Foundation::HWND;
 
-use ai::ChatMessage;
-use email::Email;
-use link_handler::LinkHandler;
-
 pub(crate) const WIN_W: f64 = 420.0;              // 固定窗口宽度，等于最大胶囊宽(--search-w)，透明区域自动穿透
 pub(crate) const TOP_MARGIN: f64 = 0.0;
-pub(crate) const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 // ── 胶囊尺寸（与 base.css :root 变量对应） ──
 pub(crate) const CAPSULE_COLLAPSED_W: f64 = 140.0; // CSS --collapsed-w
@@ -52,290 +39,25 @@ pub(crate) const MINIMIZED_H: f64 = 12.0;
 
 pub(crate) const SNAP_DURATION_MS: f64 = 300.0;
 
-/// 全局复用的 HTTP client，避免每次歌词请求重新初始化 TLS
-pub(crate) fn shared_http_client() -> &'static reqwest::blocking::Client {
-    static CLIENT: OnceLock<reqwest::blocking::Client> = OnceLock::new();
-    CLIENT.get_or_init(|| {
-        reqwest::blocking::Client::builder()
-            .connect_timeout(Duration::from_secs(2))
-            .timeout(Duration::from_secs(4))
-            .pool_max_idle_per_host(4)
-            .build()
-            .expect("failed to create http client")
-    })
-}
 pub(crate) const SNAP_FRAME_MS: u64 = 10;
 const PRIVACY_POLL_MS: u64 = 1200;
-
-/// PowerShell 带超时执行，超时自动 kill 进程
-fn run_powershell_with_timeout(args: &[&str], timeout: Duration) -> Option<String> {
-    use std::io::Read;
-    let mut child = Command::new("powershell")
-        .args(args)
-        .creation_flags(CREATE_NO_WINDOW)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .ok()?;
-
-    let start = Instant::now();
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                if !status.success() {
-                    return None;
-                }
-                let mut stdout = String::new();
-                if let Some(mut out) = child.stdout.take() {
-                    let _ = out.read_to_string(&mut stdout);
-                }
-                return Some(stdout);
-            }
-            Ok(None) => {
-                if start.elapsed() > timeout {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return None;
-                }
-                thread::sleep(Duration::from_millis(100));
-            }
-            Err(_) => {
-                let _ = child.kill();
-                return None;
-            }
-        }
-    }
-}
-
-/// 位置信息
-#[derive(Debug, Clone, serde::Serialize)]
-struct LocationInfo {
-    latitude: f64,
-    longitude: f64,
-    source: String, // "system" 或 "ip"
-    city: Option<String>,
-}
-
-/// 使用 Windows 系统定位获取位置
-fn get_system_location() -> Option<LocationInfo> {
-    // 使用 PowerShell 调用 WinRT 地理位置 API
-    let ps_script = r#"
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-try {
-    $locator = [Windows.Devices.Geolocation.Geolocator]::new()
-    $locator.DesiredAccuracy = [Windows.Devices.Geolocation.PositionAccuracy]::Default
-    $task = $locator.GetGeopositionAsync().AsTask()
-    $task.Wait(10000)
-    if ($task.IsCompleted -and $task.Result) {
-        $pos = $task.Result.Coordinate.Point.Position
-        Write-Output "$($pos.Latitude),$($pos.Longitude)"
-    }
-} catch {
-    # 忽略错误，返回空
-}
-"#;
-
-    let raw = run_powershell_with_timeout(
-        &["-NoProfile", "-Command", ps_script],
-        Duration::from_secs(12),
-    );
-    let stdout = match raw {
-        Some(s) => s.trim().to_string(),
-        None => return None,
-    };
-    if stdout.is_empty() || !stdout.contains(',') {
-        return None;
-    }
-
-    let parts: Vec<&str> = stdout.split(',').collect();
-    if parts.len() != 2 {
-        return None;
-    }
-
-    let lat = parts[0].trim().parse::<f64>().ok()?;
-    let lon = parts[1].trim().parse::<f64>().ok()?;
-
-    Some(LocationInfo {
-        latitude: lat,
-        longitude: lon,
-        source: "system".to_string(),
-        city: None,
-    })
-}
-
-/// 使用 IP 定位获取位置（备用方案）
-fn get_ip_location() -> Option<LocationInfo> {
-    let url = "http://ip-api.com/json?fields=status,lat,lon,city&lang=zh-CN";
-
-    let resp = shared_http_client()
-        .get(url)
-        .send()
-        .ok()?;
-
-    if !resp.status().is_success() {
-        return None;
-    }
-
-    let json: serde_json::Value = resp.json().ok()?;
-    if json["status"].as_str()? != "success" {
-        return None;
-    }
-
-    Some(LocationInfo {
-        latitude: json["lat"].as_f64()?,
-        longitude: json["lon"].as_f64()?,
-        source: "ip".to_string(),
-        city: json["city"].as_str().map(|s| s.to_string()),
-    })
-}
-
-#[tauri::command]
-fn get_location() -> Option<LocationInfo> {
-    // 优先使用系统定位
-    if let Some(loc) = get_system_location() {
-        println!("[Location] 系统定位成功: {:.4}, {:.4}", loc.latitude, loc.longitude);
-        return Some(loc);
-    }
-
-    // 备用：IP 定位
-    if let Some(loc) = get_ip_location() {
-        println!("[Location] IP定位成功: {:.4}, {:.4} ({})", loc.latitude, loc.longitude, loc.city.as_deref().unwrap_or("未知"));
-        return Some(loc);
-    }
-
-    println!("[Location] 定位失败");
-    None
-}
-
-// ===== Open-Meteo 天气代码映射 =====
-fn weather_code_to_cn(code: i64) -> &'static str {
-    match code {
-        0 | 1 => "晴",
-        2 => "少云",
-        3 => "多云",
-        45 => "雾",
-        48 => "雾凇",
-        51 | 53 | 55 => "毛毛雨",
-        56 | 57 => "冻雨",
-        61 => "小雨",
-        63 => "中雨",
-        65 => "大雨",
-        66 | 67 => "冰雨",
-        71 => "小雪",
-        73 => "中雪",
-        75 | 77 => "大雪",
-        80 | 81 => "阵雨",
-        82 => "强阵雨",
-        85 | 86 => "阵雪",
-        95 => "雷暴",
-        96 | 99 => "雷暴雨",
-        _ => "未知",
-    }
-}
-
-#[derive(Clone, serde::Serialize)]
-pub struct WeatherResult {
-    desc: String,
-    temp: i64,
-    city: String,
-}
-
-/// 内部天气获取逻辑（在后台线程中调用，不阻塞 command）
-fn fetch_weather_internal(
-    manual_city: &str,
-    manual_lat: f64,
-    manual_lon: f64,
-) -> Result<WeatherResult, String> {
-    let (lat, lon, city_name) = if !manual_city.is_empty() && (manual_lat != 0.0 || manual_lon != 0.0) {
-        println!("[Weather] 使用手动设置城市: {}", manual_city);
-        (manual_lat, manual_lon, manual_city.to_string())
-    } else {
-        let loc = get_location().ok_or("无法获取位置信息".to_string())?;
-        let city = loc.city.clone().unwrap_or_default();
-        (loc.latitude, loc.longitude, city)
-    };
-
-    let url = format!(
-        "https://api.open-meteo.com/v1/forecast?latitude={}&longitude={}&current=temperature_2m,weather_code&timezone=auto",
-        lat, lon
-    );
-
-    let resp = shared_http_client()
-        .get(&url)
-        .send()
-        .map_err(|e| format!("天气请求失败: {}", e))?;
-
-    if !resp.status().is_success() {
-        return Err(format!("HTTP {}", resp.status()));
-    }
-
-    let json: serde_json::Value = resp.json().map_err(|e| format!("解析失败: {}", e))?;
-    let current = &json["current"];
-    let weather_code = current["weather_code"].as_i64().unwrap_or(0);
-    let temp = current["temperature_2m"].as_f64().unwrap_or(0.0).round() as i64;
-    let desc = weather_code_to_cn(weather_code).to_string();
-
-    Ok(WeatherResult { desc, temp, city: city_name })
-}
-
-#[tauri::command]
-fn get_weather(state: tauri::State<'_, IslandState>) -> Result<WeatherResult, String> {
-    // 仅读取缓存，零阻塞
-    state.weather_cache.lock().unwrap().clone()
-        .ok_or_else(|| "天气数据尚未获取".to_string())
-}
-
-#[tauri::command]
-fn refresh_weather(state: tauri::State<'_, IslandState>) {
-    state.weather_force_refresh.store(true, Ordering::Relaxed);
-}
-
-#[tauri::command]
-fn save_weather_city(app: tauri::AppHandle, state: tauri::State<'_, IslandState>, city: String, lat: f64, lon: f64) {
-    *state.weather_city.lock().unwrap() = city;
-    *state.weather_lat.lock().unwrap() = lat;
-    *state.weather_lon.lock().unwrap() = lon;
-
-    // 清除旧缓存
-    *state.weather_cache.lock().unwrap() = None;
-
-    // 持久化
-    let settings_data = settings::build_settings_data(&state);
-    let _ = settings::save_settings_to_file(&settings_data);
-
-    // 触发后台线程立即刷新天气
-    state.weather_force_refresh.store(true, Ordering::Relaxed);
-
-    // 通知前端城市已变更
-    if let Some(win) = app.get_webview_window("main") {
-        let _ = win.emit("weather-city-changed", ());
-    }
-}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             window::start_drag, window::end_drag, window::drag_move,
-            link_handler::open_url, link_handler::open_url_with_whitelist,
-            window::get_pending_urls, window::set_interacting, window::dismiss_island, window::set_current_view,
-            window::set_agent_expanded, window::sync_window_height, window::sync_window_size, window::set_minimized, window::show_context_menu,
-            window::set_sadb_expanded, window::open_email_window,
-            window::sadb_set_idle,
+            window::dismiss_island, window::set_current_view, window::set_interacting,
+            window::get_is_expanded,
+            window::sync_window_height, window::sync_window_size, window::set_minimized, window::show_context_menu,
             window::set_music_expanded,
-            settings::open_settings, settings::get_settings, settings::save_settings,
-            settings::get_lyric_offset_players, settings::set_lyric_offset_for_player,
-            settings::set_lyric_offset_enabled, settings::delete_lyric_offset_player,
-            betterncm::install_betterncm_support,
+            settings::open_settings, settings::get_settings, settings::set_core_preferences,
+            settings::set_obsidian_preferences,
+            agent_status::get_codex_status, agent_status::clear_codex_status,
+            agent_status::install_codex_status_hooks,
+            codex_usage::get_codex_quota,
+            obsidian::append_obsidian_note,
             media::media_play_pause, media::media_next, media::media_prev,
-            ai::ai_get_settings, ai::ai_save_settings, ai::ai_detect_model_type,
-            ai::ai_send_message, ai::ai_stop_generation, ai::ai_clear_history,
-            settings::get_link_handlers, settings::save_link_handlers,
-            link_handler::open_link_with_handler, link_handler::test_link_handler,
-            ceverything::search_query, ceverything::search_execute,
-            get_location, get_weather, refresh_weather, save_weather_city, settings::search_city,
             media::media_seek,
             media::media_volume_up, media::media_volume_down,
             media::media_get_volume, media::media_set_volume,
@@ -344,20 +66,8 @@ pub fn run() {
             settings::get_blacklist_enabled, settings::set_blacklist_enabled,
             settings::get_smtc_whitelist, settings::save_smtc_whitelist,
             settings::get_smtc_whitelist_enabled, settings::set_smtc_whitelist_enabled,
-            settings::get_preview_updates, settings::set_preview_updates,
-            settings::get_show_preview_toggle, settings::set_show_preview_toggle,
-            updater::get_app_version, updater::check_for_updates, updater::download_and_install_update,
             logger::get_log_path, logger::open_log_dir,
             logger::get_log_level, logger::set_log_level,
-            sadb::sadb_start_mirroring, sadb::sadb_stop_mirroring,
-            sadb::sadb_send_touch_event, sadb::sadb_send_scroll_event,
-            sadb::sadb_send_keycode, sadb::sadb_inject_text,
-            sadb::sadb_set_clipboard,
-            sadb::sadb_connect_device, sadb::sadb_disconnect_device,
-            tools::tools_check_adb, tools::tools_check_adb_devices, tools::tools_kill_adb_server, tools::tools_find_adb_in_path, tools::tools_download_adb,
-            tools::tools_extract_adb, tools::tools_download_and_install_adb,
-            email::fetch_emails, email::refresh_emails, email::get_email_cache_dir, email::clear_email_cache,
-            email::fetch_email_uid_list, email::fetch_email_metas_by_uids, email::fetch_email_body_by_uid,
         ])
         .setup(|app| {
             let window = app.get_webview_window("main").unwrap();
@@ -382,10 +92,6 @@ pub fn run() {
             // 从文件加载设置
             let settings = settings::load_settings_from_file();
             logger::set_level(&settings.log_level);
-            let clipboard_enabled = Arc::new(AtomicBool::new(settings.clipboard_enabled));
-            let pending_url: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-            let shortcut_key = Arc::new(Mutex::new(settings.shortcut_key.clone()));
-            let search_shortcut = Arc::new(Mutex::new(settings.search_shortcut.clone()));
             let lyric_mode = Arc::new(Mutex::new(settings.lyric_mode.clone()));
             let lyric_offset_enabled = Arc::new(AtomicBool::new(settings.lyric_offset_enabled));
             // 按播放器存储的歌词补偿，启动时规范化键值
@@ -394,28 +100,10 @@ pub fn run() {
             // 当前命中播放器 app_id（供 settings 子页高亮）
             let active_player_app_id: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
             let current_view = Arc::new(Mutex::new("time".to_string()));
-
-            // AI 相关字段
-            let ai_api_url = Arc::new(Mutex::new(settings.ai_api_url.clone()));
-            let ai_api_key = Arc::new(Mutex::new(settings.ai_api_key.clone()));
-            let ai_model = Arc::new(Mutex::new(settings.ai_model.clone()));
-            let is_reasoning_model = Arc::new(AtomicBool::new(settings.is_reasoning_model));
-            let ai_enabled = Arc::new(AtomicBool::new(
-                !settings.ai_api_url.is_empty() && !settings.ai_api_key.is_empty() && !settings.ai_model.is_empty()
-            ));
-            let ai_generating = Arc::new(AtomicBool::new(false));
-            let ai_history: Arc<Mutex<Vec<ChatMessage>>> = Arc::new(Mutex::new(Vec::new()));
-            let agent_expanded = Arc::new(AtomicBool::new(false));
-            let sadb_expanded = Arc::new(AtomicBool::new(false));
-            let sadb_idle = Arc::new(AtomicBool::new(false));
-            let sadb_mirroring = Arc::new(AtomicBool::new(false));
             let music_expanded = Arc::new(AtomicBool::new(false));
             let is_minimized = Arc::new(AtomicBool::new(false));
             let expand_anim_id = Arc::new(AtomicU64::new(0));
             let indicator_color = Arc::new(Mutex::new(settings.indicator_color.clone()));
-            let agent_window_size = Arc::new(Mutex::new(settings.agent_window_size.clone()));
-            let link_handlers = Arc::new(Mutex::new(settings.link_handlers.clone()));
-            let url_whitelist: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
             let auto_start = Arc::new(AtomicBool::new(settings.auto_start));
             let blacklist_processes: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(
                 settings.blacklist_processes.iter().map(|s| s.trim().to_lowercase()).filter(|s| !s.is_empty()).collect()
@@ -425,24 +113,9 @@ pub fn run() {
                 settings.smtc_app_whitelist.iter().map(|s| s.trim().to_lowercase()).filter(|s| !s.is_empty()).collect()
             ));
             let smtc_whitelist_enabled = Arc::new(AtomicBool::new(settings.smtc_whitelist_enabled));
-            let preview_updates = Arc::new(AtomicBool::new(settings.preview_updates));
-            let show_preview_toggle = Arc::new(AtomicBool::new(settings.show_preview_toggle));
-            let weather_city = Arc::new(Mutex::new(settings.weather_city.clone()));
-            let weather_lat = Arc::new(Mutex::new(settings.weather_lat));
-            let weather_lon = Arc::new(Mutex::new(settings.weather_lon));
-            let weather_cache: Arc<Mutex<Option<WeatherResult>>> = Arc::new(Mutex::new(None));
-            let weather_force_refresh = Arc::new(AtomicBool::new(true)); // 启动后立即获取
-            let email_config = Arc::new(Mutex::new(Email {
-                username: settings.email_username.clone(),
-                auth: settings.email_auth.clone(),
-                address: settings.email_address.clone(),
-                port: settings.email_port,
-            }));
-            let email_poll_interval_secs = Arc::new(AtomicU64::new(settings.email_poll_interval_secs.max(1)));
-            let latest_email_uid: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
-            let email_shortcut = Arc::new(Mutex::new(settings.email_shortcut.clone()));
-            let cached_email_metas: Arc<Mutex<Vec<email::EmailMeta>>> = Arc::new(Mutex::new(email::load_email_metas()));
             let cc_routes: Arc<Mutex<Vec<cc::CcRoute>>> = Arc::new(Mutex::new(settings.cc.clone()));
+            let obsidian_vault_path = Arc::new(Mutex::new(settings.obsidian_vault_path.clone()));
+            let obsidian_daily_notes_dir = Arc::new(Mutex::new(settings.obsidian_daily_notes_dir.clone()));
 
             media::update_smtc_whitelist(
                 smtc_whitelist_enabled.load(Ordering::Relaxed),
@@ -450,61 +123,27 @@ pub fn run() {
             );
 
             app.manage(IslandState {
-                sadb_session: tokio::sync::Mutex::new(None),
-                sadb_ip: Arc::new(Mutex::new(settings.sadb_ip.clone())),
-                sadb_port: Arc::new(Mutex::new(settings.sadb_port)),
-                adb_install_dir: Arc::new(Mutex::new(settings.adb_install_dir.clone())),
-                adb_path: Arc::new(Mutex::new(settings.adb_path.clone())),
                 is_notifying: is_notifying.clone(),
                 is_expanded: is_expanded.clone(),
                 is_dragging: is_dragging.clone(),
                 is_interacting: is_interacting.clone(),
-                clipboard_enabled: clipboard_enabled.clone(),
-                pending_url: pending_url.clone(),
-                shortcut_key: shortcut_key.clone(),
-                search_shortcut: search_shortcut.clone(),
                 lyric_mode: lyric_mode.clone(),
                 lyric_offset_enabled: lyric_offset_enabled.clone(),
                 lyric_offsets_by_player: lyric_offsets_by_player.clone(),
-                active_player_app_id: active_player_app_id.clone(),
                 current_view: current_view.clone(),
-                agent_expanded: agent_expanded.clone(),
-                sadb_expanded: sadb_expanded.clone(),
-                sadb_idle: sadb_idle.clone(),
-                sadb_mirroring: sadb_mirroring.clone(),
                 music_expanded: music_expanded.clone(),
                 is_minimized: is_minimized.clone(),
                 expand_anim_id: expand_anim_id.clone(),
-                screen_w, home_x, hwnd, scale,
-                ai_api_url: ai_api_url.clone(),
-                ai_api_key: ai_api_key.clone(),
-                ai_model: ai_model.clone(),
-                is_reasoning_model: is_reasoning_model.clone(),
-                ai_enabled: ai_enabled.clone(),
-                ai_generating: ai_generating.clone(),
-                ai_history: ai_history.clone(),
+                screen_w,
                 indicator_color: indicator_color.clone(),
-                agent_window_size: agent_window_size.clone(),
-                link_handlers: link_handlers.clone(),
-                url_whitelist: url_whitelist.clone(),
-                weather_city: weather_city.clone(),
-                weather_lat: weather_lat.clone(),
-                weather_lon: weather_lon.clone(),
-                weather_cache: weather_cache.clone(),
-                weather_force_refresh: weather_force_refresh.clone(),
                 auto_start: auto_start.clone(),
                 blacklist_processes: blacklist_processes.clone(),
                 blacklist_enabled: blacklist_enabled.clone(),
                 smtc_app_whitelist: smtc_app_whitelist.clone(),
                 smtc_whitelist_enabled: smtc_whitelist_enabled.clone(),
-                preview_updates: preview_updates.clone(),
-                show_preview_toggle: show_preview_toggle.clone(),
-                email_config: email_config.clone(),
-                email_poll_interval_secs: email_poll_interval_secs.clone(),
-                latest_email_uid: latest_email_uid.clone(),
-                email_shortcut: email_shortcut.clone(),
-                cached_email_metas: cached_email_metas.clone(),
                 cc_routes: cc_routes.clone(),
+                obsidian_vault_path: obsidian_vault_path.clone(),
+                obsidian_daily_notes_dir: obsidian_daily_notes_dir.clone(),
             });
 
             // --- 系统托盘 ---
@@ -514,7 +153,7 @@ pub fn run() {
             let menu = MenuBuilder::new(app).item(&settings_item).item(&quit_item).build()?;
             let _tray = TrayIconBuilder::new()
                 .icon(Image::new_owned(create_tray_icon(), 32, 32))
-                .menu(&menu).tooltip("灵动岛")
+                .menu(&menu).tooltip("Wisland")
                 .on_menu_event(move |app, event| {
                     match event.id().as_ref() {
                         "quit" => app_handle.exit(0),
@@ -524,7 +163,7 @@ pub fn run() {
                                 let _ = win.set_focus();
                             } else {
                                 let _ = tauri::WebviewWindowBuilder::new(app, "settings", tauri::WebviewUrl::App("settings.html".into()))
-                                    .title("灵动岛 - 设置")
+                                    .title("Wisland 设置")
                                     .inner_size(1000.0, 600.0)
                                     .min_inner_size(800.0, 500.0)
                                     .resizable(true)
@@ -537,71 +176,6 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            // --- 注册默认快捷键 Alt+O ---
-            {
-                use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
-                let pending_url_sc = pending_url.clone();
-                let shortcut_str = settings.shortcut_key.clone();
-                let _ = app.global_shortcut().on_shortcut(shortcut_str.as_str(), move |_app, _shortcut, event| {
-                    if event.state == ShortcutState::Pressed {
-                        let urls = pending_url_sc.lock().unwrap();
-                        if let Some(url) = urls.first() {
-                            let _ = open::that(url);
-                        }
-                    }
-                });
-            }
-
-            // --- 搜索快捷键（从设置读取键位） ---
-            {
-                use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
-                let win_search = window.clone();
-                let hwnd_search = hwnd.0 as usize;
-                let search_sc = settings.search_shortcut.clone();
-                let _ = app.global_shortcut().on_shortcut(search_sc.as_str(), move |_app, _shortcut, event| {
-                    if event.state == ShortcutState::Pressed {
-                        let h = HWND(hwnd_search as *mut _);
-                        // 仅当窗口不在前台时才抢焦点，避免覆盖 webview 内部 input focus
-                        let fg = unsafe { windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow() };
-                        if fg != h {
-                            window::force_foreground(h);
-                            let _ = win_search.set_focus();
-                            // 强制 DWM 重组合窗口，修复 WebView2 透明窗口黑屏问题
-                            unsafe {
-                                use windows::Win32::UI::WindowsAndMessaging::SetWindowPos;
-                                let _ = SetWindowPos(
-                                    h,
-                                    None,
-                                    0, 0, 0, 0,
-                                    windows::Win32::UI::WindowsAndMessaging::SWP_NOMOVE
-                                        | windows::Win32::UI::WindowsAndMessaging::SWP_NOSIZE
-                                        | windows::Win32::UI::WindowsAndMessaging::SWP_NOZORDER
-                                        | windows::Win32::UI::WindowsAndMessaging::SWP_NOACTIVATE
-                                        | windows::Win32::UI::WindowsAndMessaging::SWP_FRAMECHANGED,
-                                );
-                            }
-                        }
-                        let _ = win_search.emit("activate-search", ());
-                    }
-                });
-            }
-
-            // --- 邮件快捷键 ---
-            {
-                use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
-                let email_sc = settings.email_shortcut.clone();
-                let app_h = app.handle().clone();
-                logger::info("Shortcut", &format!("registering email shortcut: {}", email_sc));
-                match app.global_shortcut().on_shortcut(email_sc.as_str(), move |_app, _shortcut, event| {
-                    if event.state == ShortcutState::Pressed {
-                        window::open_email_window_inner(app_h.clone(), None);
-                    }
-                }) {
-                    Ok(_) => logger::info("Shortcut", "email shortcut registered ok"),
-                    Err(e) => logger::info("Shortcut", &format!("email shortcut register FAILED: {e}")),
-                }
-            }
-
             // --- 鼠标监控线程 ---
             let win_m = window.clone();
             let noti_m = is_notifying.clone();
@@ -610,11 +184,7 @@ pub fn run() {
             let interact_m = is_interacting.clone();
             let lyric_mode_m = lyric_mode.clone();
             let current_view_m = current_view.clone();
-            let agent_expanded_m = agent_expanded.clone();
-            let sadb_expanded_m = sadb_expanded.clone();
-            let sadb_idle_m = sadb_idle.clone();
             let music_expanded_m = music_expanded.clone();
-            let agent_window_size_m = agent_window_size.clone();
             let expand_anim_id_m = expand_anim_id.clone();
             let is_minimized_m = is_minimized.clone();
             let hwnd_raw = hwnd.0 as usize;
@@ -623,18 +193,12 @@ pub fn run() {
 
             thread::spawn(move || {
                 let hwnd = HWND(hwnd_raw as *mut _);
-                let center_x = (screen_w * scale / 2.0) as i32;
-                let zone_half = (75.0 * scale) as i32;
-                let zone_top = (12.0 * scale) as i32;
-                let zone_bottom = (90.0 * scale) as i32;
                 let mut was_on_capsule = false;
 
                 loop {
                     if let Some((mx, my)) = window::get_cursor_pos() {
                         // 根据当前状态确定胶囊宽度
                         let expanded = exp_m.load(Ordering::Relaxed);
-                        let agent_exp = agent_expanded_m.load(Ordering::Relaxed);
-                        let sadb_exp = sadb_expanded_m.load(Ordering::Relaxed);
                         let music_exp = music_expanded_m.load(Ordering::Relaxed);
                         let view = current_view_m.lock().unwrap().clone();
                         let lyric_mode = lyric_mode_m.lock().unwrap().clone();
@@ -644,30 +208,18 @@ pub fn run() {
                             let win_w = (rect.right - rect.left) as f64 / scale;
                             let win_h = (rect.bottom - rect.top) as f64 / scale;
 
-                            let (cw, ch) = if is_minimized_m.load(Ordering::Relaxed) {
-                                (MINIMIZED_W, MINIMIZED_H)
+                            let (cw, ch, radius) = if is_minimized_m.load(Ordering::Relaxed) {
+                                (MINIMIZED_W, MINIMIZED_H, MINIMIZED_H / 2.0)
                             } else if music_exp && view == "lyric" {
                                 // 音乐大面板：占满窗口
-                                (win_w, win_h)
-                            } else if agent_exp && view == "agent" {
-                                let size_setting = agent_window_size_m.lock().unwrap().clone();
-                                let (aw, ah) = window::get_agent_window_size(&size_setting);
-                                (aw, ah)
-                            } else if sadb_exp && view == "sadb" {
-                                (win_w, win_h)
-                            } else if sadb_idle_m.load(Ordering::Relaxed) && view == "sadb" {
-                                // 待机面板：380×420 居中于 420px 窗口内
-                                (380.0, 420.0)
+                                (win_w, win_h, 28.0)
                             } else if expanded {
-                                (CAPSULE_EXPANDED_W, CAPSULE_EXPANDED_H)
+                                (CAPSULE_EXPANDED_W, CAPSULE_EXPANDED_H, 28.0)
                             } else if view == "lyric" && is_music_m.load(Ordering::Relaxed) && lyric_mode != "off" {
-                                (CAPSULE_LYRIC_W, CAPSULE_COLLAPSED_H)
-                            } else if view == "search" {
-                                // 搜索视图：宽度=窗口宽度，高度=实际窗口高度（结果展开后会变大）
-                                (win_w, win_h)
+                                (CAPSULE_LYRIC_W, CAPSULE_COLLAPSED_H, CAPSULE_COLLAPSED_H / 2.0)
                             } else {
                                 // time 等收起态
-                                (CAPSULE_COLLAPSED_W, CAPSULE_COLLAPSED_H)
+                                (CAPSULE_COLLAPSED_W, CAPSULE_COLLAPSED_H, CAPSULE_COLLAPSED_H / 2.0)
                             };
 
                             let win_x = rect.left as f64;
@@ -676,7 +228,15 @@ pub fn run() {
                             let capsule_y = win_y + CAPSULE_TOP_PAD * scale;
                             let fmx = mx as f64;
                             let fmy = my as f64;
-                            fmx >= capsule_x && fmx <= capsule_x + cw * scale && fmy >= capsule_y && fmy <= capsule_y + ch * scale
+                            window::point_in_rounded_rect(
+                                fmx,
+                                fmy,
+                                capsule_x,
+                                capsule_y,
+                                cw * scale,
+                                ch * scale,
+                                radius * scale,
+                            )
                         } else { false };
 
                         if on_capsule && !was_on_capsule {
@@ -689,10 +249,8 @@ pub fn run() {
                             was_on_capsule = false;
                         }
 
-                        let sadb_idle = sadb_idle_m.load(Ordering::Relaxed);
-                        if !agent_exp && !sadb_exp && !sadb_idle && !music_exp && !is_minimized_m.load(Ordering::Relaxed) && !noti_m.load(Ordering::Relaxed) && !drag_m.load(Ordering::Relaxed) && !interact_m.load(Ordering::Relaxed) && view != "search" {
-                            let in_zone = mx > center_x - zone_half && mx < center_x + zone_half && my < zone_top;
-                            if in_zone && !exp_m.load(Ordering::Relaxed) {
+                        if !music_exp && !is_minimized_m.load(Ordering::Relaxed) && !noti_m.load(Ordering::Relaxed) && !drag_m.load(Ordering::Relaxed) && !interact_m.load(Ordering::Relaxed) {
+                            if on_capsule && !exp_m.load(Ordering::Relaxed) {
                                 exp_m.store(true, Ordering::Relaxed);
                                 let _ = win_m.emit("set-expand", true);
                                 let gen = expand_anim_id_m.fetch_add(1, Ordering::Relaxed) + 1;
@@ -702,7 +260,7 @@ pub fn run() {
                                 thread::spawn(move || {
                                     window::animate_window_height(HWND(h_raw as *mut _), scale, from_h, WIN_H_DEFAULT, WIN_W, 350.0, anim_id, gen);
                                 });
-                            } else if my > zone_bottom && exp_m.load(Ordering::Relaxed) {
+                            } else if !on_capsule && exp_m.load(Ordering::Relaxed) {
                                 exp_m.store(false, Ordering::Relaxed);
                                 let _ = win_m.emit("set-expand", false);
                                 let gen = expand_anim_id_m.fetch_add(1, Ordering::Relaxed) + 1;
@@ -812,134 +370,6 @@ pub fn run() {
                 }
             });
 
-            // --- 剪贴板监控线程 ---
-            let win_cb = window.clone();
-            let noti_cb = is_notifying.clone();
-            let exp_cb = is_expanded.clone();
-            let cb_enabled = clipboard_enabled.clone();
-            let pending_url_cb = pending_url.clone();
-
-            thread::spawn(move || {
-                logger::info("Clipboard", "polling thread started");
-                let mut last_text = String::new();
-                let mut logged_disabled = false;
-                loop {
-                    thread::sleep(Duration::from_millis(1200));
-                    if !cb_enabled.load(Ordering::Relaxed) {
-                        if !logged_disabled {
-                            logger::debug("Clipboard", "clipboard_enabled = false, skipping");
-                            logged_disabled = true;
-                        }
-                        continue;
-                    }
-                    logged_disabled = false;
-                    let read = clipboard::read_clipboard_text();
-                    if read.is_none() {
-                        //logger::debug("Clipboard", "read_clipboard_text returned None");
-                        continue;
-                    }
-                    let text = read.unwrap();
-                    if text != last_text {
-                        last_text = text.clone();
-                        logger::debug("Clipboard", &format!("text changed (len={}): {:?}", text.len(), &text[..text.len().min(200)]));
-                        let urls = clipboard::extract_urls(&text);
-                        logger::debug("Clipboard", &format!("extract_urls => {} url(s)", urls.len()));
-                        if !urls.is_empty() {
-                            logger::info("Clipboard", &format!("detected {} url(s): {:?}", urls.len(), urls));
-                            *pending_url_cb.lock().unwrap() = urls.clone();
-                            noti_cb.store(true, Ordering::Relaxed);
-                            exp_cb.store(true, Ordering::Relaxed);
-                            let _ = win_cb.set_size(tauri::LogicalSize::new(WIN_W, WIN_H_DEFAULT));
-                            let _ = win_cb.emit("set-expand", true);
-                            let _ = win_cb.emit("clipboard-urls", urls.clone());
-                        }
-                    }
-                }
-            });
-
-            // --- 邮件 UID 轮询线程 ---
-            let app_handle_email = app.handle().clone();
-            let win_email = window.clone();
-            let noti_email = is_notifying.clone();
-            let exp_email = is_expanded.clone();
-            let email_config_t = email_config.clone();
-            let email_interval_t = email_poll_interval_secs.clone();
-            let latest_email_uid_t = latest_email_uid.clone();
-            let cached_metas_t = cached_email_metas.clone();
-
-            thread::spawn(move || {
-                logger::info("EmailPoll", "polling thread started");
-                let mut first_run = true;
-                loop {
-                    if first_run {
-                        thread::sleep(Duration::from_secs(3));
-                    } else {
-                        let interval = email_interval_t.load(Ordering::Relaxed).max(1);
-                        thread::sleep(Duration::from_secs(interval));
-                    }
-
-                    let config = email_config_t.lock().unwrap().clone();
-                    if !config.is_configured() {
-                        first_run = false;
-                        continue;
-                    }
-
-                    if first_run {
-                        first_run = false;
-                        logger::info("EmailPoll", "initial fetch: pulling latest 10 emails");
-                        let metas = tauri::async_runtime::block_on(config.fetch_latest_emails());
-                        logger::info("EmailPoll", &format!("initial fetch done: {} emails cached", metas.len()));
-                        if let Some(first) = metas.first() {
-                            *latest_email_uid_t.lock().unwrap() = Some(first.uid.clone());
-                        }
-                        // 保存到内存 + 磁盘
-                        *cached_metas_t.lock().unwrap() = metas.clone();
-                        email::save_email_metas(&metas);
-                        let _ = app_handle_email.emit("email-updated", ());
-                        continue;
-                    }
-
-                    // 增量检查：对比服务器最新 UID 与本地已知 UID
-                    let uid = tauri::async_runtime::block_on(config.get_latest_uid());
-                    let Some(uid) = uid else { continue; };
-
-                    let mut latest = latest_email_uid_t.lock().unwrap();
-                    let need_fetch = match latest.as_ref() {
-                        None => { *latest = Some(uid.clone()); true }
-                        Some(current) if current != &uid => {
-                            logger::info("EmailPoll", &format!("uid changed: {} -> {}", current, uid));
-                            *latest = Some(uid.clone());
-                            true
-                        }
-                        _ => false,
-                    };
-                    drop(latest);
-
-                    if need_fetch {
-                        let metas = tauri::async_runtime::block_on(config.fetch_latest_emails());
-                        logger::info("EmailPoll", &format!("fetch done: {} emails", metas.len()));
-
-                        let old_top = cached_metas_t.lock().unwrap().first().map(|m| m.uid.clone());
-                        *cached_metas_t.lock().unwrap() = metas.clone();
-                        email::save_email_metas(&metas);
-                        let _ = app_handle_email.emit("email-updated", ());
-
-                        // 仅当有真正新邮件时发通知（新最大 UID > 旧最大 UID）
-                        let new_top = metas.first().map(|m| m.uid.clone());
-                        if new_top != old_top {
-                            noti_email.store(true, Ordering::Relaxed);
-                            exp_email.store(true, Ordering::Relaxed);
-                            let _ = win_email.set_size(tauri::LogicalSize::new(WIN_W, WIN_H_DEFAULT));
-                            let _ = win_email.emit("set-expand", true);
-                            let _ = win_email.emit("email-notice", serde_json::json!({
-                                "uid": uid,
-                                "message": "收到新邮件"
-                            }));
-                        }
-                    }
-                }
-            });
-
             // --- Claude Code 本地通知服务器 ---
             let win_cc = window.clone();
             let noti_cc = is_notifying.clone();
@@ -947,105 +377,6 @@ pub fn run() {
             let cc_routes_t = cc_routes.clone();
             thread::spawn(move || {
                 cc::start_server(win_cc, noti_cc, exp_cc, cc_routes_t);
-            });
-
-            // --- 天气后台线程 ---
-            let win_weather = window.clone();
-            let weather_city_t = weather_city.clone();
-            let weather_lat_t = weather_lat.clone();
-            let weather_lon_t = weather_lon.clone();
-            let weather_cache_t = weather_cache.clone();
-            let weather_refresh_t = weather_force_refresh.clone();
-
-            thread::spawn(move || {
-                const WEATHER_INTERVAL_SECS: u64 = 20 * 60; // 正常成功间隔：20 分钟
-                const WEATHER_RETRY_SECS: u64 = 60;          // 连续失败时的快速重试间隔：1 分钟
-                const WEATHER_COOLDOWN_SECS: u64 = 30 * 60;  // 达到上限后的冷却时长：30 分钟
-                const WEATHER_MAX_FAILURES: u32 = 3;         // 触发冷却的连续失败次数
-
-                let mut last_fetch = Instant::now() - Duration::from_secs(WEATHER_INTERVAL_SECS);
-                // 当前「快速重试窗口」内已失败次数（0..=WEATHER_MAX_FAILURES）
-                let mut consecutive_failures: u32 = 0;
-                // 下次允许发起请求的最早时间点；None 表示不受退避限制
-                let mut next_retry_at: Option<Instant> = None;
-
-                loop {
-                    // 手动强制刷新：彻底重置失败状态，立即放行
-                    let force = weather_refresh_t.compare_exchange(
-                        true, false, Ordering::SeqCst, Ordering::Relaxed,
-                    ).is_ok();
-                    if force {
-                        consecutive_failures = 0;
-                        next_retry_at = None;
-                    }
-
-                    let now = Instant::now();
-                    let retry_gate_passed = next_retry_at.map(|t| now >= t).unwrap_or(true);
-                    let interval_elapsed = last_fetch.elapsed() >= Duration::from_secs(WEATHER_INTERVAL_SECS);
-                    let should_fetch = force || (retry_gate_passed && interval_elapsed);
-
-                    if should_fetch {
-                        let city = weather_city_t.lock().unwrap().clone();
-                        let lat = *weather_lat_t.lock().unwrap();
-                        let lon = *weather_lon_t.lock().unwrap();
-
-                        match fetch_weather_internal(&city, lat, lon) {
-                            Ok(result) => {
-                                *weather_cache_t.lock().unwrap() = Some(result.clone());
-                                let _ = win_weather.emit("weather-updated", serde_json::json!({
-                                    "desc": result.desc,
-                                    "temp": result.temp,
-                                    "city": result.city
-                                }));
-                                last_fetch = Instant::now();
-                                consecutive_failures = 0;
-                                next_retry_at = None;
-                                println!("[Weather] 天气更新成功: {} {} {}°C", result.city, result.desc, result.temp);
-                            }
-                            Err(e) => {
-                                consecutive_failures += 1;
-                                if consecutive_failures >= WEATHER_MAX_FAILURES {
-                                    next_retry_at = Some(now + Duration::from_secs(WEATHER_COOLDOWN_SECS));
-                                    consecutive_failures = 0; // 冷却结束后重新给 3 次机会
-                                    println!(
-                                        "[Weather] 连续 {} 次失败，进入 {} 秒冷却后再重试: {}",
-                                        WEATHER_MAX_FAILURES, WEATHER_COOLDOWN_SECS, e,
-                                    );
-                                } else {
-                                    next_retry_at = Some(now + Duration::from_secs(WEATHER_RETRY_SECS));
-                                    println!(
-                                        "[Weather] 天气获取失败 ({}/{}), {} 秒后重试: {}",
-                                        consecutive_failures, WEATHER_MAX_FAILURES, WEATHER_RETRY_SECS, e,
-                                    );
-                                }
-                                let _ = win_weather.emit("weather-error", serde_json::json!({
-                                    "error": e
-                                }));
-                            }
-                        }
-                    }
-
-                    thread::sleep(Duration::from_secs(5)); // 每 5 秒检查是否需要刷新
-                }
-            });
-
-            // --- 启动时自动检查更新 ---
-            let app_handle_update = app.handle().clone();
-            thread::spawn(move || {
-                thread::sleep(Duration::from_secs(10));
-                match updater::check_for_updates(app_handle_update.clone(), None) {
-                    Ok(info) => {
-                        if info.has_update {
-                            println!("[Updater] 发现新版本: v{}", info.latest_version);
-                            let _ = app_handle_update.emit("update-available", info);
-                        } else {
-                            println!("[Updater] 当前已是最新版本");
-                        }
-                    }
-                    Err(e) => {
-                        println!("[Updater] 启动检查更新失败: {}", e);
-                    }
-                }
             });
 
             // --- 媒体/歌词监控线程 ---
@@ -1509,80 +840,21 @@ pub struct IslandState {
     pub is_expanded: Arc<AtomicBool>,
     pub is_dragging: Arc<AtomicBool>,
     pub is_interacting: Arc<AtomicBool>,
-    pub clipboard_enabled: Arc<AtomicBool>,
-    pub pending_url: Arc<Mutex<Vec<String>>>,
-    pub shortcut_key: Arc<Mutex<String>>,
-    pub search_shortcut: Arc<Mutex<String>>,
-    pub lyric_mode: Arc<Mutex<String>>, // "off" | "info" | "lyric"
+    pub lyric_mode: Arc<Mutex<String>>,
     pub lyric_offset_enabled: Arc<AtomicBool>,
-    /// 按 SMTC app_id 存储的歌词补偿（ms），key 已规范化为小写
     pub lyric_offsets_by_player: Arc<Mutex<std::collections::HashMap<String, i64>>>,
-    /// 当前命中的播放器 app_id（小写），供 settings 子页高亮
-    pub active_player_app_id: Arc<Mutex<Option<String>>>,
-    pub current_view: Arc<Mutex<String>>, // "time" | "notice" | "urls" | "lyric" | "agent"
-    pub agent_expanded: Arc<AtomicBool>,
+    pub current_view: Arc<Mutex<String>>,
     pub music_expanded: Arc<AtomicBool>,
     pub is_minimized: Arc<AtomicBool>,
     pub expand_anim_id: Arc<AtomicU64>,
     pub screen_w: f64,
-    pub home_x: f64,
-    pub hwnd: HWND,
-    pub scale: f64,
-    // AI Agent 相关字段
-    pub ai_api_url: Arc<Mutex<String>>,
-    pub ai_api_key: Arc<Mutex<String>>,
-    pub ai_model: Arc<Mutex<String>>,
-    pub is_reasoning_model: Arc<AtomicBool>,
-    pub ai_enabled: Arc<AtomicBool>,
-    pub ai_generating: Arc<AtomicBool>,
-    pub ai_history: Arc<Mutex<Vec<ChatMessage>>>,
-    // 收起状态小横条颜色
     pub indicator_color: Arc<Mutex<String>>,
-    // AI 窗口大小档位
-    pub agent_window_size: Arc<Mutex<String>>,
-    // 自定义链接处理器
-    pub link_handlers: Arc<Mutex<Vec<LinkHandler>>>,
-    // URL 域名白名单（可选）
-    pub url_whitelist: Arc<Mutex<Vec<String>>>,
-    pub weather_city: Arc<Mutex<String>>,
-    pub weather_lat: Arc<Mutex<f64>>,
-    pub weather_lon: Arc<Mutex<f64>>,
-    // 天气缓存（后台线程写入，command 读取）
-    pub weather_cache: Arc<Mutex<Option<WeatherResult>>>,
-    pub weather_force_refresh: Arc<AtomicBool>,
-    // 开机自启
     pub auto_start: Arc<AtomicBool>,
-    // 黑名单进程列表（小写）
     pub blacklist_processes: Arc<Mutex<Vec<String>>>,
-    // 黑名单功能总开关
     pub blacklist_enabled: Arc<AtomicBool>,
-    // SMTC app_id 白名单
     pub smtc_app_whitelist: Arc<Mutex<Vec<String>>>,
     pub smtc_whitelist_enabled: Arc<AtomicBool>,
-    // 预览更新通道开关
-    pub preview_updates: Arc<AtomicBool>,
-    // 是否显示预览版开关（UI 可见性）
-    pub show_preview_toggle: Arc<AtomicBool>,
-    // 邮件
-    pub email_config: Arc<Mutex<Email>>,
-    pub email_poll_interval_secs: Arc<AtomicU64>,
-    pub latest_email_uid: Arc<Mutex<Option<String>>>,
-    pub email_shortcut: Arc<Mutex<String>>,
-    pub cached_email_metas: Arc<Mutex<Vec<email::EmailMeta>>>,
-    // Claude Code 通知路由
     pub cc_routes: Arc<Mutex<Vec<cc::CcRoute>>>,
-    // ADB / 屏幕镜像 相关
-    pub(crate) sadb_session: tokio::sync::Mutex<Option<sadb::SessionHandle>>,
-    pub sadb_ip: Arc<Mutex<String>>,
-    pub sadb_port: Arc<Mutex<u16>>,
-    pub adb_install_dir: Arc<Mutex<String>>,
-    pub adb_path: Arc<Mutex<String>>,
-    pub sadb_expanded: Arc<AtomicBool>,
-    /// 待机面板展开中（已点击展开但尚未开始镜像，或镜像结束后回退）
-    pub sadb_idle: Arc<AtomicBool>,
-    /// 镜像流正常推送中（视频帧在传输），用于允许拖动不回弹
-    pub sadb_mirroring: Arc<AtomicBool>,
+    pub obsidian_vault_path: Arc<Mutex<String>>,
+    pub obsidian_daily_notes_dir: Arc<Mutex<String>>,
 }
-
-unsafe impl Send for IslandState {}
-unsafe impl Sync for IslandState {}

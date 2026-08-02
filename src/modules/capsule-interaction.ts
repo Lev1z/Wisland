@@ -1,361 +1,88 @@
 import { invoke } from "@tauri-apps/api/core";
+import { capsule, musicPanelArtist, musicPanelCoverImg, musicPanelSong, vinylCover } from "../dom";
 import {
-  capsule,
-  vinylCover,
-  musicPanelCoverImg, musicPanelSong, musicPanelArtist,
-} from "../dom";
-import {
+  currentArtistName,
+  currentSongTitle,
+  currentThumbnailUrl,
   currentView,
-  dragStarted, setDragStarted,
-  musicClickTimer, setMusicClickTimer,
-  agentClickTimer, setAgentClickTimer,
-  sadbClickTimer, setSadbClickTimer,
-  isExpandAnimating, setIsExpandAnimating,
+  dragStarted,
+  isExpandAnimating,
+  musicClickTimer,
+  setDragStarted,
+  setIsExpandAnimating,
+  setMusicClickTimer,
   setSkipResizeSync,
-  currentSongTitle, currentArtistName, currentThumbnailUrl,
 } from "../state";
-import { switchToNextView } from "./view-switcher";
 import { fetchAndUpdateVolume } from "./music-controls";
 import { showContextMenu } from "./minimize-drag";
+import { switchToNextView } from "./view-switcher";
 
-export function initCapsuleInteraction() {
+function toggleMusicPanel(): void {
+  if (isExpandAnimating) return;
+  setIsExpandAnimating(true);
+  setSkipResizeSync(true);
+  const expanding = !capsule.classList.contains("music-expanded");
 
-  capsule.addEventListener("click", (e: MouseEvent) => {
-    console.log("[Capsule] click", e.target, "currentView:", currentView);
+  if (expanding) {
+    capsule.classList.add("music-expanded");
+    musicPanelSong.textContent = currentSongTitle;
+    musicPanelArtist.textContent = currentArtistName;
+    if (currentThumbnailUrl) {
+      vinylCover.style.backgroundImage = `url(${currentThumbnailUrl})`;
+      musicPanelCoverImg.style.backgroundImage = `url(${currentThumbnailUrl})`;
+    }
+    fetchAndUpdateVolume();
+    const bodyPadding = Number.parseFloat(getComputedStyle(document.body).paddingTop) || 0;
+    void invoke("set_music_expanded", { expanded: true, width: 380, height: 425 + bodyPadding });
+  } else {
+    capsule.classList.remove("music-expanded");
+    void invoke("set_music_expanded", { expanded: false, width: 380, height: 420 });
+  }
 
-    const target = e.target as HTMLElement;
+  window.setTimeout(() => {
+    setSkipResizeSync(false);
+    setIsExpandAnimating(false);
+  }, expanding ? 400 : 500);
+}
 
-
-
-    // 如果刚刚发生了拖动，不触发点击
-
+export function initCapsuleInteraction(): void {
+  capsule.addEventListener("click", (event) => {
     if (dragStarted) {
-
       setDragStarted(false);
-
-      return;
-
-    }
-
-
-
-    // 音乐视图：单击展开/收起
-
-    if (currentView === "lyric") {
-
-      // 展开态：点击头部收起，排除交互元素
-
-      if (capsule.classList.contains("music-expanded")) {
-
-        if (!target.closest("#music-panel-header")) {
-
-          return;
-
-        }
-
-      } else {
-
-        // 收起态：排除播放控制
-
-        if (target.closest(".media-btn") || target.closest(".progress-bar") || target.closest(".vol-btn")) {
-
-          return;
-
-        }
-
-      }
-
-
-
-      e.stopPropagation();
-
-
-
-      if (musicClickTimer) {
-
-        clearTimeout(musicClickTimer);
-
-        setMusicClickTimer(null);
-
-        return;
-
-      }
-
-
-
-      setMusicClickTimer(window.setTimeout(() => {
-
-        setMusicClickTimer(null);
-
-        if (isExpandAnimating) return;
-
-        setIsExpandAnimating(true);
-
-        const willExpand = !capsule.classList.contains("music-expanded");
-
-        if (willExpand) {
-
-          setSkipResizeSync(true);
-
-          capsule.classList.add("music-expanded");
-
-          musicPanelSong.textContent = currentSongTitle || "";
-
-          musicPanelArtist.textContent = currentArtistName || "";
-
-          if (currentThumbnailUrl) {
-
-            vinylCover.style.backgroundImage = `url(${currentThumbnailUrl})`;
-
-            musicPanelCoverImg.style.backgroundImage = `url(${currentThumbnailUrl})`;
-
-          }
-
-          fetchAndUpdateVolume();
-
-          const bodyPad = parseFloat(getComputedStyle(document.body).paddingTop) || 0;
-
-          void invoke("set_music_expanded", { expanded: true, width: 380, height: 420 + bodyPad + 5 });
-
-          window.setTimeout(() => { setSkipResizeSync(false); setIsExpandAnimating(false); }, 400);
-
-        } else {
-
-          setSkipResizeSync(true);
-
-          capsule.classList.remove("music-expanded");
-
-          void invoke("set_music_expanded", { expanded: false, width: 380, height: 420 });
-
-          window.setTimeout(() => { setSkipResizeSync(false); setIsExpandAnimating(false); }, 500);
-
-        }
-
-      }, 250));
-
-      return;
-
-    }
-
-
-
-    // Agent 视图特殊处理：单击展开/收起，但需要等待排除双击
-
-    if (currentView === "agent") {
-
-      // 展开态：只有点击状态栏才收起，但排除清空按钮
-
-      if (capsule.classList.contains("agent-expanded")) {
-
-        if (!target.closest("#agent-status-bar") || target.closest("#agent-clear-btn")) {
-
-          return;
-
-        }
-
-      } else {
-
-        // 收起态：排除交互元素，其他区域点击展开
-
-        if (target.closest("#agent-input") || target.closest("#agent-send-btn") || target.closest("#agent-stop-btn") || target.closest("#agent-clear-btn") || target.closest(".thinking-section") || target.closest("#agent-messages") || target.closest("#agent-confirm-dialog")) {
-
-          return;
-
-        }
-
-      }
-
-
-
-      e.stopPropagation();
-
-
-
-      // 延迟执行，等待可能的双击
-
-      if (agentClickTimer) {
-
-        clearTimeout(agentClickTimer);
-
-        setAgentClickTimer(null);
-
-        return; // 双击的第二次 click，忽略
-
-      }
-
-
-
-      setAgentClickTimer(window.setTimeout(() => {
-
-        setAgentClickTimer(null);
-
-        if (isExpandAnimating) return;
-
-        setIsExpandAnimating(true);
-
-        const willExpand = !capsule.classList.contains("agent-expanded");
-
-        if (willExpand) {
-
-          setSkipResizeSync(true);
-
-          capsule.classList.add("agent-expanded");
-
-          void invoke("set_agent_expanded", { expanded: true });
-
-          window.setTimeout(() => { setSkipResizeSync(false); setIsExpandAnimating(false); }, 400);
-
-        } else {
-
-          setSkipResizeSync(true);
-
-          const agentArea = document.getElementById("agent-area");
-
-          if (agentArea) agentArea.classList.add("collapsing");
-
-          window.setTimeout(() => {
-
-            capsule.classList.remove("agent-expanded");
-
-            void invoke("set_agent_expanded", { expanded: false });
-
-            window.setTimeout(() => {
-
-              if (agentArea) agentArea.classList.remove("collapsing");
-
-              setSkipResizeSync(false);
-
-              setIsExpandAnimating(false);
-
-            }, 500);
-
-          }, 100);
-
-        }
-
-      }, 250));
-
-      return;
-
-    }
-
-    // sadb 视图三态：胶囊 → 待机面板(idle) → 镜像(expanded)
-    if (currentView === "sadb") {
-      // 镜像中：所有操作由面板内按钮（Stop）处理，胶囊层不响应点击
-      if (capsule.classList.contains("sadb-expanded")) return;
-
-      // 待机面板：点击状态栏才收起回胶囊
-      if (capsule.classList.contains("sadb-idle")) {
-        if (!target.closest("#sadb-status-bar")) return;
-        e.stopPropagation();
-        if (sadbClickTimer) { clearTimeout(sadbClickTimer); setSadbClickTimer(null); return; }
-        setSadbClickTimer(window.setTimeout(() => {
-          setSadbClickTimer(null);
-          if (isExpandAnimating) return;
-          setIsExpandAnimating(true);
-          setSkipResizeSync(true);
-          capsule.classList.remove("sadb-idle");
-          void invoke("sadb_set_idle", { idle: false });
-          window.setTimeout(() => { setSkipResizeSync(false); setIsExpandAnimating(false); }, 400);
-        }, 250));
-        return;
-      }
-
-      // 胶囊态：点击任意区域（排除按钮/canvas）→ 展开待机面板
-      if (target.closest("#sadb-btn-start") || target.closest("#sadb-btn-stop") || target.closest("#sadb-canvas")) return;
-      e.stopPropagation();
-      if (sadbClickTimer) { clearTimeout(sadbClickTimer); setSadbClickTimer(null); return; }
-      setSadbClickTimer(window.setTimeout(() => {
-        setSadbClickTimer(null);
-        if (isExpandAnimating) return;
-        setIsExpandAnimating(true);
-        setSkipResizeSync(true);
-        capsule.classList.add("sadb-idle");
-        void invoke("sadb_set_idle", { idle: true });
-        window.setTimeout(() => { setSkipResizeSync(false); setIsExpandAnimating(false); }, 400);
-      }, 250));
       return;
     }
+    if (currentView !== "lyric") return;
 
-  });
+    const target = event.target as HTMLElement;
+    if (target.closest("button, .progress-bar, .mp-progress-bar, .mp-volume-bar")) return;
+    if (capsule.classList.contains("music-expanded") && !target.closest("#music-panel-header")) return;
 
-
-
-  capsule.addEventListener("dblclick", (e: MouseEvent) => {
-    console.log("[Capsule] dblclick", e.target, "currentView:", currentView);
-
-    const target = e.target as HTMLElement;
-
-    if (target.closest(".url-item") || target.closest("#notice-area") || target.closest(".media-btn") || target.closest(".view-dot") || target.closest("#agent-input") || target.closest("#agent-send-btn") || target.closest("#agent-stop-btn") || target.closest("#agent-clear-btn") || target.closest("#sadb-btn-start") || target.closest("#sadb-btn-stop") || target.closest("#sadb-canvas")) {
-
-      return;
-
-    }
-
-
-
-    // 取消 agent 单击延时
-
-    if (agentClickTimer) {
-
-      clearTimeout(agentClickTimer);
-
-      setAgentClickTimer(null);
-
-    }
-
-    // 取消 music 单击延时
-
+    event.stopPropagation();
     if (musicClickTimer) {
-
-      clearTimeout(musicClickTimer);
-
+      window.clearTimeout(musicClickTimer);
       setMusicClickTimer(null);
-
+      return;
     }
-    // 取消 sadb 单击延时
-    if (sadbClickTimer) {
+    setMusicClickTimer(window.setTimeout(() => {
+      setMusicClickTimer(null);
+      toggleMusicPanel();
+    }, 240));
+  });
 
-      clearTimeout(sadbClickTimer);
-
-      setSadbClickTimer(null);
-
+  capsule.addEventListener("dblclick", (event) => {
+    const target = event.target as HTMLElement;
+    if (target.closest("button, #notice-area, .view-dot, .progress-bar, .mp-progress-bar, .mp-volume-bar")) return;
+    if (musicClickTimer) {
+      window.clearTimeout(musicClickTimer);
+      setMusicClickTimer(null);
     }
-
-
-
-    e.stopPropagation();
-
+    event.stopPropagation();
     switchToNextView();
-
   });
 
-
-
-  // 右键菜单功能
-
-  capsule.addEventListener("contextmenu", (e: MouseEvent) => {
-
-    e.preventDefault();
-
-
-
-    // Agent 展开态时不显示菜单
-
-    if (capsule.classList.contains("agent-expanded") || capsule.classList.contains("music-expanded")) return;
-
-
-
-    // 隐私弹窗显示时不显示菜单
-
-    if (capsule.classList.contains("privacy-active")) return;
-
-
-
-    // 显示系统菜单
-
+  capsule.addEventListener("contextmenu", (event) => {
+    event.preventDefault();
+    if (capsule.classList.contains("music-expanded") || capsule.classList.contains("privacy-active")) return;
     showContextMenu();
-
   });
-
 }

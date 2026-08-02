@@ -32,7 +32,6 @@ export default defineConfig(async () => ({
       input: {
         main: resolve(__dirname, "index.html"),
         settings: resolve(__dirname, "settings.html"),
-        email: resolve(__dirname, "email.html"),
       },
     },
   },

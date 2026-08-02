@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "DynamicIsland",
-  "version": "0.8.7",
-  "identifier": "com.pyisland.dynamic-island",
+  "productName": "Wisland",
+  "version": "0.1.0",
+  "identifier": "com.wisland.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -15,7 +15,7 @@
       {
         "label": "main",
         "url": "index.html",
-        "title": "DynamicIsland",
+        "title": "Wisland",
         "width": 340,
         "height": 84,
         "x": 0,
@@ -40,10 +40,6 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "resources": [
-      "resources/Everything64.dll",
-      "resources/scrcpy-server-v3.3.4"
-    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

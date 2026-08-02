@@ -45,12 +45,6 @@ function showPrivacyPopup(payload: PrivacyUsagePayload) {
 
 
 
-  // AI 大屏展开时不显示隐私检测
-
-  if (capsule.classList.contains("agent-expanded")) return;
-
-
-
   privacyMic.classList.toggle("active", microphone);
 
   privacyCamera.classList.toggle("active", camera);

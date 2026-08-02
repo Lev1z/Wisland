@@ -1,7 +1,7 @@
 {
-  "name": "dynamic-island",
+  "name": "wisland",
   "private": true,
-  "version": "0.8.7",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,10 +10,7 @@
     "tauri": "tauri"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2",
-    "highlight.js": "^11.11.1",
-    "katex": "^0.16.40",
-    "marked": "^17.0.5"
+    "@tauri-apps/api": "^2"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",

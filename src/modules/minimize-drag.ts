@@ -7,7 +7,6 @@ import {
 import {
   isMinimized, setIsMinimized,
   isMinimizeAnimating, setIsMinimizeAnimating,
-  currentView,
   isDragging, setIsDragging,
   dragStarted, setDragStarted,
   lastX, setLastX,
@@ -152,25 +151,11 @@ export function initMinimizeDrag() {
 
     const target = e.target as HTMLElement;
 
-    if (target.closest(".url-item") || target.closest("#notice-area") || target.closest(".media-btn") || target.closest(".view-dot")) {
+    if (target.closest(".url-item") || target.closest("#notice-area") || target.closest("#quick-note-area") || target.closest(".media-btn") || target.closest(".view-dot")) {
 
       return;
 
     }
-
-    // Agent 展开态下，排除输入框和按钮，但允许拖动状态栏和消息区域
-
-    if (currentView === "agent" && capsule.classList.contains("agent-expanded")) {
-
-      if (target.closest("#agent-input") || target.closest("#agent-send-btn") || target.closest("#agent-stop-btn") || target.closest("#agent-clear-btn")) {
-
-        return;
-
-      }
-
-    }
-
-
 
     setIsDragging(true);
 

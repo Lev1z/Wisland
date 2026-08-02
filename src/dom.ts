@@ -1,150 +1,63 @@
 import type { ViewMode } from "./types";
 
-export const capsule = document.getElementById("island-capsule") as HTMLDivElement;
-export const currentViewContainer = document.getElementById("current-view") as HTMLDivElement;
-export const viewHolder = document.getElementById("view-holder") as HTMLDivElement;
+function required<T extends Element>(id: string): T {
+  const element = document.getElementById(id);
+  if (!element) throw new Error(`Missing required element: #${id}`);
+  return element as unknown as T;
+}
 
-
-export const timeWrapper = document.getElementById("time-wrapper") as HTMLDivElement;
-
-export const timeText = document.getElementById("time-text") as HTMLDivElement;
-
-export const dateText = document.getElementById("date-text") as HTMLDivElement;
-
-export const weatherText = document.getElementById("weather-text") as HTMLDivElement;
-
-
-
-export const noticeArea = document.getElementById("notice-area") as HTMLDivElement;
-
-export const lyricArea = document.getElementById("lyric-area") as HTMLDivElement;
-
-
-
-export const lyricText = document.getElementById("lyric-text") as HTMLDivElement;
-export const lyricTextInner = document.getElementById("lyric-text-inner") as HTMLSpanElement;
-
-export const lyricMeta = document.getElementById("lyric-meta") as HTMLDivElement;
-
-export const vinylDisc = document.getElementById("vinyl-disc") as HTMLDivElement;
-
-export const vinylCover = document.getElementById("vinyl-cover") as HTMLDivElement;
-
-
-export const progressBar = document.getElementById("progress-bar") as HTMLDivElement;
-
-export const progressFill = document.getElementById("progress-fill") as HTMLDivElement;
-
-export const progressThumb = document.getElementById("progress-thumb") as HTMLDivElement;
-
-
-
-// 音乐展开面板
-
-export const musicPanelCoverImg = document.getElementById("music-panel-cover-img") as HTMLDivElement;
-
-export const musicPanelSong = document.getElementById("music-panel-song") as HTMLDivElement;
-
-export const musicPanelArtist = document.getElementById("music-panel-artist") as HTMLDivElement;
-
-export const mpProgressBar = document.getElementById("mp-progress-bar") as HTMLDivElement;
-
-export const mpProgressFill = document.getElementById("mp-progress-fill") as HTMLDivElement;
-
-export const mpProgressThumb = document.getElementById("mp-progress-thumb") as HTMLDivElement;
-
-export const mpTimeCurrent = document.getElementById("mp-time-current") as HTMLSpanElement;
-
-export const mpTimeTotal = document.getElementById("mp-time-total") as HTMLSpanElement;
-
-export const mpPrev = document.getElementById("mp-prev") as HTMLButtonElement;
-
-export const mpPlay = document.getElementById("mp-play") as HTMLButtonElement;
-
-export const mpNext = document.getElementById("mp-next") as HTMLButtonElement;
-
+export const capsule = required<HTMLDivElement>("island-capsule");
+export const currentViewContainer = required<HTMLDivElement>("current-view");
+export const viewHolder = required<HTMLDivElement>("view-holder");
+export const timeWrapper = required<HTMLDivElement>("time-wrapper");
+export const timeText = required<HTMLDivElement>("time-text");
+export const codexQuotaRing = required<HTMLDivElement>("codex-quota-ring");
+export const codexQuotaProgress = required<SVGCircleElement>("codex-quota-progress");
+export const codexStatusDot = required<HTMLDivElement>("codex-status-dot");
+export const noticeArea = required<HTMLDivElement>("notice-area");
+export const quickNoteArea = required<HTMLFormElement>("quick-note-area");
+export const quickNoteInput = required<HTMLInputElement>("quick-note-input");
+export const quickNoteSave = required<HTMLButtonElement>("quick-note-save");
+export const quickNoteCancel = required<HTMLButtonElement>("quick-note-cancel");
+export const lyricArea = required<HTMLDivElement>("lyric-area");
+export const lyricText = required<HTMLDivElement>("lyric-text");
+export const lyricTextInner = required<HTMLSpanElement>("lyric-text-inner");
+export const lyricMeta = required<HTMLDivElement>("lyric-meta");
+export const vinylDisc = required<HTMLDivElement>("vinyl-disc");
+export const vinylCover = required<HTMLDivElement>("vinyl-cover");
+export const progressBar = required<HTMLDivElement>("progress-bar");
+export const progressFill = required<HTMLDivElement>("progress-fill");
+export const progressThumb = required<HTMLDivElement>("progress-thumb");
+export const musicPanelCoverImg = required<HTMLDivElement>("music-panel-cover-img");
+export const musicPanelSong = required<HTMLDivElement>("music-panel-song");
+export const musicPanelArtist = required<HTMLDivElement>("music-panel-artist");
+export const mpProgressBar = required<HTMLDivElement>("mp-progress-bar");
+export const mpProgressFill = required<HTMLDivElement>("mp-progress-fill");
+export const mpProgressThumb = required<HTMLDivElement>("mp-progress-thumb");
+export const mpTimeCurrent = required<HTMLSpanElement>("mp-time-current");
+export const mpTimeTotal = required<HTMLSpanElement>("mp-time-total");
+export const mpPrev = required<HTMLButtonElement>("mp-prev");
+export const mpPlay = required<HTMLButtonElement>("mp-play");
+export const mpNext = required<HTMLButtonElement>("mp-next");
 export const mpIconPlay = mpPlay.querySelector(".mp-icon-play") as SVGElement;
-
 export const mpIconPause = mpPlay.querySelector(".mp-icon-pause") as SVGElement;
-
-export const mpVolumeBar = document.getElementById("mp-volume-bar") as HTMLDivElement;
-
-export const mpVolumeFill = document.getElementById("mp-volume-fill") as HTMLDivElement;
-
-export const mpVolumeThumb = document.getElementById("mp-volume-thumb") as HTMLDivElement;
-
-export const mpLyricText = document.getElementById("mp-lyric-text") as HTMLDivElement;
-
-
-
-export const agentArea = document.getElementById("agent-area") as HTMLDivElement;
-
-export const agentMessages = document.getElementById("agent-messages") as HTMLDivElement;
-
-export const agentInput = document.getElementById("agent-input") as HTMLInputElement;
-
-export const agentSendBtn = document.getElementById("agent-send-btn") as HTMLButtonElement;
-
-export const agentStopBtn = document.getElementById("agent-stop-btn") as HTMLButtonElement;
-
-export const agentModelName = document.getElementById("agent-model-name") as HTMLDivElement;
-
-export const agentStatusLabel = document.getElementById("agent-status-label") as HTMLDivElement;
-
-export const agentClearBtn = document.getElementById("agent-clear-btn") as HTMLButtonElement;
-
-export const agentConfirmDialog = document.getElementById("agent-confirm-dialog") as HTMLDivElement;
-
-export const agentConfirmCancel = document.getElementById("agent-confirm-cancel") as HTMLButtonElement;
-
-export const agentConfirmOk = document.getElementById("agent-confirm-ok") as HTMLButtonElement;
-
-export const searchArea = document.getElementById("search-area") as HTMLDivElement;
-export const searchInput = document.getElementById("search-input") as HTMLInputElement;
-export const searchResults = document.getElementById("search-results") as HTMLDivElement;
-export const searchPrevBtn = document.getElementById("search-prev-btn") as HTMLButtonElement;
-export const searchNextBtn = document.getElementById("search-next-btn") as HTMLButtonElement;
-export const searchPageLabel = document.getElementById("search-page-label") as HTMLSpanElement;
-
-export const sadbArea = document.getElementById("sadb-area") as HTMLDivElement;
-export const sadbCanvas = document.getElementById("sadb-canvas") as HTMLCanvasElement;
-export const sadbBtnStart = document.getElementById("sadb-btn-start") as HTMLButtonElement;
-export const sadbBtnStop = document.getElementById("sadb-btn-stop") as HTMLButtonElement;
-export const sadbStatus = document.getElementById("sadb-status") as HTMLSpanElement;
-export const sadbDeviceName = document.getElementById("sadb-device-name") as HTMLSpanElement;
-export const sadbResolution = document.getElementById("sadb-resolution") as HTMLSpanElement;
-export const sadbFps = document.getElementById("sadb-fps") as HTMLSpanElement;
-
-
-
-export const btnPrev = document.getElementById("btn-prev") as HTMLButtonElement;
-
-export const btnPlay = document.getElementById("btn-play") as HTMLButtonElement;
-
-export const btnNext = document.getElementById("btn-next") as HTMLButtonElement;
-
-export const iconPlay = document.getElementById("icon-play") as HTMLElement;
-
-export const iconPause = document.getElementById("icon-pause") as HTMLElement;
-
-
-
-export const viewSwitcher = document.getElementById("view-switcher") as HTMLDivElement;
-
-export const viewDots = document.getElementById("view-dots") as HTMLDivElement;
-
-export const privacyIndicators = document.getElementById("privacy-indicators") as HTMLDivElement;
-
-export const privacyMic = document.getElementById("privacy-mic") as HTMLDivElement;
-
-export const privacyCamera = document.getElementById("privacy-camera") as HTMLDivElement;
-
-export const collapsedIndicator = document.getElementById("collapsed-indicator") as HTMLDivElement;
+export const mpVolumeBar = required<HTMLDivElement>("mp-volume-bar");
+export const mpVolumeFill = required<HTMLDivElement>("mp-volume-fill");
+export const mpVolumeThumb = required<HTMLDivElement>("mp-volume-thumb");
+export const mpLyricText = required<HTMLDivElement>("mp-lyric-text");
+export const btnPrev = required<HTMLButtonElement>("btn-prev");
+export const btnPlay = required<HTMLButtonElement>("btn-play");
+export const btnNext = required<HTMLButtonElement>("btn-next");
+export const iconPlay = required<HTMLElement>("icon-play");
+export const iconPause = required<HTMLElement>("icon-pause");
+export const viewSwitcher = required<HTMLDivElement>("view-switcher");
+export const viewDots = required<HTMLDivElement>("view-dots");
+export const privacyIndicators = required<HTMLDivElement>("privacy-indicators");
+export const privacyMic = required<HTMLDivElement>("privacy-mic");
+export const privacyCamera = required<HTMLDivElement>("privacy-camera");
+export const collapsedIndicator = required<HTMLDivElement>("collapsed-indicator");
 
 export const viewElements: Record<ViewMode, HTMLElement> = {
   time: timeWrapper,
   lyric: lyricArea,
-  agent: agentArea,
-  search: searchArea,
-  sadb: sadbArea,
 };
