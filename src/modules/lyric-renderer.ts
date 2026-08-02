@@ -7,14 +7,12 @@ import {
   mpTimeCurrent, mpTimeTotal,
 } from "../dom";
 import {
-  isMusicPlaying, setIsMusicPlaying,
+  setIsMusicPlaying,
   isPlaying, setIsPlaying,
   lyricMode, setLyricMode,
   setCurrentDurationMs,
   isSeeking,
   isMpSeeking,
-  currentView,
-  userChosenView, setUserChosenView,
   tokenSpans, setTokenSpans,
   currentLyricTokenKey, setCurrentLyricTokenKey,
   activeLyricTokens, setActiveLyricTokens,
@@ -33,7 +31,7 @@ import {
   prevLineMap, setPrevLineMap,
 } from "../state";
 import { formatTime } from "../utils";
-import { setView, updateSwitcherUI, updatePlayIcon } from "./view-switcher";
+import { updateSwitcherUI, updatePlayIcon } from "./view-switcher";
 import { updateSeekable } from "./music-controls";
 
 /**
@@ -433,25 +431,15 @@ export function initLyricRenderer() {
 
   listen<string>("lyric-mode-changed", (event) => {
     setLyricMode(event.payload);
-    if (lyricMode === "off" && currentView === "lyric") {
-      setUserChosenView("time");
-      setView("time", true);
-    }
     updateSwitcherUI();
   });
 
   listen<{ text: string | null; title: string; artist: string; genre?: string; position_ms?: number; duration_ms?: number; is_playing?: boolean; seekable?: boolean; nearby_lyrics?: Array<{ text: string; is_current: boolean }>; tokens?: Array<{ text: string; start_ms: number; end_ms: number }>; line_start_ms?: number; next_line_time_ms?: number } | null>("lyric-update", (event) => {
 
     if (event.payload === null) {
-      const wasPlaying = isMusicPlaying;
       setIsMusicPlaying(false);
       setIsPlaying(false);
       updatePlayIcon();
-
-      if (wasPlaying) {
-        setUserChosenView("time");
-        setView("time", true);
-      }
 
       updateSwitcherUI();
       resetIslandLyricScroll();
@@ -459,7 +447,6 @@ export function initLyricRenderer() {
       return;
     }
 
-    const wasPlaying = isMusicPlaying;
     setIsMusicPlaying(true);
     const { text, title, artist, position_ms, duration_ms } = event.payload;
     if (position_ms !== undefined) {
@@ -546,11 +533,6 @@ export function initLyricRenderer() {
           ensureLyricTokenAnimationLoop();
         }
       }
-    }
-
-    if (!wasPlaying && lyricMode !== "off" && userChosenView === "time") {
-      setUserChosenView("lyric");
-      setView("lyric", true);
     }
 
     // 同步歌词到展开面板（多行）— 使用 FLIP 技术做轨道式平滑滚动

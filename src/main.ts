@@ -12,12 +12,16 @@ import { initCodexStatus } from "./modules/codex-status";
 import { initQuickNote } from "./modules/quick-note";
 import { initCapsuleExpansion } from "./modules/capsule-expansion";
 import { initCodexQuota } from "./modules/codex-quota";
+import { initFileTray } from "./modules/file-tray";
+import { initAppearance } from "./modules/appearance";
 
+initAppearance();
 initClock();
 initNoticeQueue();
 initCodexStatus();
 initCodexQuota();
 initQuickNote();
+initFileTray();
 initPrivacy();
 initViewSwitcher();
 initCapsuleExpansion();

@@ -48,6 +48,12 @@ pub(crate) struct SettingsData {
     pub lyric_offsets_by_player: HashMap<String, i64>,
     #[serde(default = "default_indicator_color")]
     pub indicator_color: String,
+    #[serde(default = "default_capsule_opacity")]
+    pub capsule_opacity: f64,
+    #[serde(default = "default_capsule_scale")]
+    pub capsule_scale: f64,
+    #[serde(default)]
+    pub rainbow_border: bool,
     #[serde(default)]
     pub auto_start: bool,
     #[serde(default = "default_blacklist_processes")]
@@ -77,7 +83,15 @@ fn default_lyric_offset_enabled() -> bool {
 }
 
 pub(crate) fn default_indicator_color() -> String {
-    "#2edb67".to_string()
+    "#ffffff".to_string()
+}
+
+fn default_capsule_opacity() -> f64 {
+    1.0
+}
+
+fn default_capsule_scale() -> f64 {
+    1.0
 }
 
 fn default_blacklist_enabled() -> bool {
@@ -155,6 +169,9 @@ impl Default for SettingsData {
             lyric_offset_enabled: default_lyric_offset_enabled(),
             lyric_offsets_by_player: HashMap::new(),
             indicator_color: default_indicator_color(),
+            capsule_opacity: default_capsule_opacity(),
+            capsule_scale: default_capsule_scale(),
+            rainbow_border: false,
             auto_start: false,
             blacklist_processes: default_blacklist_processes(),
             blacklist_enabled: default_blacklist_enabled(),
@@ -181,6 +198,11 @@ pub(crate) fn load_settings_from_file() -> SettingsData {
     if let Ok(content) = fs::read_to_string(&path) {
         if let Ok(mut data) = serde_json::from_str::<SettingsData>(&content) {
             data.lyric_offsets_by_player = normalize_lyric_offsets(&data.lyric_offsets_by_player);
+            data.capsule_opacity = data.capsule_opacity.clamp(0.6, 1.0);
+            data.capsule_scale = data.capsule_scale.clamp(0.9, 1.15);
+            if data.indicator_color.eq_ignore_ascii_case("#2edb67") {
+                data.indicator_color = default_indicator_color();
+            }
             return data;
         }
     }
@@ -201,6 +223,9 @@ pub(crate) fn build_settings_data(state: &IslandState) -> SettingsData {
         lyric_offset_enabled: state.lyric_offset_enabled.load(Ordering::Relaxed),
         lyric_offsets_by_player: state.lyric_offsets_by_player.lock().unwrap().clone(),
         indicator_color: state.indicator_color.lock().unwrap().clone(),
+        capsule_opacity: *state.capsule_opacity.lock().unwrap(),
+        capsule_scale: *state.capsule_scale.lock().unwrap(),
+        rainbow_border: state.rainbow_border.load(Ordering::Relaxed),
         auto_start: state.auto_start.load(Ordering::Relaxed),
         blacklist_processes: state.blacklist_processes.lock().unwrap().clone(),
         blacklist_enabled: state.blacklist_enabled.load(Ordering::Relaxed),
@@ -240,9 +265,35 @@ pub fn get_settings(state: tauri::State<'_, IslandState>) -> serde_json::Value {
         "lyric_mode": state.lyric_mode.lock().unwrap().clone(),
         "lyric_offset_enabled": state.lyric_offset_enabled.load(Ordering::Relaxed),
         "indicator_color": state.indicator_color.lock().unwrap().clone(),
+        "capsule_opacity": *state.capsule_opacity.lock().unwrap(),
+        "capsule_scale": *state.capsule_scale.lock().unwrap(),
+        "rainbow_border": state.rainbow_border.load(Ordering::Relaxed),
         "obsidian_vault_path": state.obsidian_vault_path.lock().unwrap().clone(),
         "obsidian_daily_notes_dir": state.obsidian_daily_notes_dir.lock().unwrap().clone(),
     })
+}
+
+#[tauri::command]
+pub fn set_appearance_preferences(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, IslandState>,
+    opacity: f64,
+    scale: f64,
+    rainbow_border: bool,
+) -> Result<(), String> {
+    let opacity = opacity.clamp(0.6, 1.0);
+    let scale = scale.clamp(0.9, 1.15);
+    *state.capsule_opacity.lock().unwrap() = opacity;
+    *state.capsule_scale.lock().unwrap() = scale;
+    state.rainbow_border.store(rainbow_border, Ordering::Relaxed);
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.emit("appearance-changed", serde_json::json!({
+            "opacity": opacity,
+            "scale": scale,
+            "rainbowBorder": rainbow_border,
+        }));
+    }
+    save_settings_to_file(&build_settings_data(&state))
 }
 
 #[tauri::command]

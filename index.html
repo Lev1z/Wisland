@@ -12,13 +12,11 @@
   <div id="island-capsule">
     <div id="current-view"></div>
     <div id="notice-area" class="overlay-popup"></div>
-    <form id="quick-note-area" class="overlay-popup" autocomplete="off">
-      <input id="quick-note-input" type="text" maxlength="500" placeholder="写入今天的 Obsidian 日记…" aria-label="随手记内容" />
-      <button id="quick-note-save" type="submit">保存</button>
-      <button id="quick-note-cancel" type="button" aria-label="取消">×</button>
-    </form>
-
-    <div id="view-switcher" aria-label="切换视图">
+    <div id="file-drop-overlay" aria-hidden="true">
+      <svg viewBox="0 0 24 24"><path d="M12 3v11m0-11 4 4m-4-4L8 7M5 13v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/></svg>
+      <span>松开以暂存文件</span>
+    </div>
+    <div id="view-switcher" aria-label="切换页面">
       <div id="view-dots"></div>
     </div>
 
@@ -41,6 +39,7 @@
 
   <div id="view-holder" hidden>
     <div id="time-wrapper" class="content-wrapper">
+      <div id="home-date" aria-hidden="true">26/08/02 Sun.</div>
       <div id="codex-quota-ring" class="quota-unknown" role="img" aria-label="Codex 剩余额度未知" title="Codex 剩余额度未知">
         <svg viewBox="0 0 20 20" aria-hidden="true">
           <circle class="quota-track" cx="10" cy="10" r="7.5"></circle>
@@ -49,6 +48,8 @@
       </div>
       <div id="time-text">00:00:00</div>
       <div id="codex-status-dot" class="status-idle" role="status" aria-label="Codex 空闲" title="Codex 空闲"></div>
+      <div id="codex-quota-label" aria-hidden="true">--%</div>
+      <div id="codex-status-label" aria-hidden="true">空闲</div>
     </div>
 
     <div id="lyric-area" class="content-wrapper">
@@ -56,6 +57,9 @@
         <div class="vinyl-grooves"></div>
         <div class="vinyl-cover" id="vinyl-cover"></div>
         <div class="vinyl-center"></div>
+      </div>
+      <div id="music-waveform" aria-label="音乐声波">
+        <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
       </div>
       <div id="lyric-text-wrap">
         <div id="lyric-text"><span id="lyric-text-inner"></span></div>
@@ -118,6 +122,37 @@
           </div>
           <svg width="12" height="12" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 7.97v8.05A4.48 4.48 0 0 0 16.5 12zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" fill="rgba(255,255,255,.35)"/></svg>
         </div>
+      </div>
+    </div>
+
+    <div id="journal-area" class="content-wrapper">
+      <div id="journal-summary" aria-live="polite">
+        <div class="journal-empty">无待办事项</div>
+      </div>
+      <form id="journal-composer" autocomplete="off">
+        <div id="journal-kind" role="group" aria-label="记录类型">
+          <button id="journal-kind-note" class="active" type="button">记录</button>
+          <button id="journal-kind-todo" type="button">待办</button>
+        </div>
+        <textarea id="journal-input" maxlength="500" rows="2" placeholder="写入今天的 Obsidian…" aria-label="日记或待办内容"></textarea>
+        <div id="journal-actions">
+          <button id="journal-save" type="submit" title="保存" aria-label="保存">✓</button>
+          <button id="journal-cancel" type="button" title="取消" aria-label="取消">×</button>
+        </div>
+      </form>
+    </div>
+
+    <div id="tray-area" class="content-wrapper">
+      <div id="tray-summary">
+        <span class="tray-summary-icon">▱</span>
+        <span>临时托盘</span>
+        <strong id="tray-count">0</strong>
+      </div>
+      <div id="tray-list" role="list" aria-label="临时文件"></div>
+      <div id="tray-empty">拖拽文件到胶囊即可暂存</div>
+      <div id="tray-context-menu" hidden>
+        <button id="tray-copy" type="button">复制路径</button>
+        <button id="tray-remove" type="button">移除</button>
       </div>
     </div>
   </div>

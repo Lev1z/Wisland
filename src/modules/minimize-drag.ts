@@ -16,14 +16,30 @@ import {
   DRAG_THRESHOLD,
 } from "../state";
 
+let fallbackIndicatorColor = "#ffffff";
+let codexIndicatorColor: string | null = null;
+
+function paintIndicator(color: string): void {
+  collapsedIndicator.style.background = `linear-gradient(90deg, ${color}aa, ${color}, ${color}aa)`;
+  collapsedIndicator.style.boxShadow = `0 0 8px ${color}70`;
+}
+
 // ===== 收起/展开功能 =====
 
 export function applyIndicatorColor(color: string) {
+  fallbackIndicatorColor = color || "#ffffff";
+  paintIndicator(codexIndicatorColor ?? fallbackIndicatorColor);
+}
 
-  collapsedIndicator.style.background = `linear-gradient(90deg, ${color}dd, ${color}, ${color}dd)`;
-
-  collapsedIndicator.style.boxShadow = `0 0 8px ${color}80`;
-
+export function applyIndicatorStatus(phase: "idle" | "running" | "completed" | "failed" | "stale", connected: boolean): void {
+  codexIndicatorColor = !connected
+    ? null
+    : phase === "running"
+      ? "#f3a52b"
+      : phase === "idle" || phase === "completed"
+        ? "#79dd18"
+        : "#747982";
+  paintIndicator(codexIndicatorColor ?? fallbackIndicatorColor);
 }
 
 
@@ -151,7 +167,7 @@ export function initMinimizeDrag() {
 
     const target = e.target as HTMLElement;
 
-    if (target.closest(".url-item") || target.closest("#notice-area") || target.closest("#quick-note-area") || target.closest(".media-btn") || target.closest(".view-dot")) {
+    if (target.closest(".url-item") || target.closest("#notice-area") || target.closest("#journal-composer") || target.closest(".media-btn") || target.closest(".view-dot")) {
 
       return;
 
@@ -239,7 +255,9 @@ export function initMinimizeDrag() {
 
     if (dragStarted) {
 
-      void invoke("end_drag");
+      void invoke<boolean>("end_drag").then((shouldMinimize) => {
+        if (shouldMinimize) minimizeIsland();
+      });
 
       // 不立即重置 dragStarted，留给 click handler 检测并阻断点击
 

@@ -26,7 +26,9 @@ pub(crate) const TOP_MARGIN: f64 = 0.0;
 // ── 胶囊尺寸（与 base.css :root 变量对应） ──
 pub(crate) const CAPSULE_COLLAPSED_W: f64 = 140.0; // CSS --collapsed-w
 pub(crate) const CAPSULE_COLLAPSED_H: f64 = 50.0;  // CSS --collapsed-h
-pub(crate) const CAPSULE_LYRIC_W: f64 = 340.0;     // CSS --lyric-collapsed-w
+pub(crate) const CAPSULE_LYRIC_W: f64 = 190.0;     // CSS --lyric-collapsed-w
+pub(crate) const CAPSULE_JOURNAL_W: f64 = 250.0;   // CSS --journal-collapsed-w
+pub(crate) const CAPSULE_TRAY_W: f64 = 190.0;      // CSS view-tray
 pub(crate) const CAPSULE_EXPANDED_W: f64 = 330.0;  // CSS --expanded-w
 pub(crate) const CAPSULE_EXPANDED_H: f64 = 74.0;   // CSS --expanded-h
 pub(crate) const CAPSULE_TOP_PAD: f64 = 5.0;       // body padding-top
@@ -52,11 +54,14 @@ pub fn run() {
             window::sync_window_height, window::sync_window_size, window::set_minimized, window::show_context_menu,
             window::set_music_expanded,
             settings::open_settings, settings::get_settings, settings::set_core_preferences,
+            settings::set_appearance_preferences,
             settings::set_obsidian_preferences,
             agent_status::get_codex_status, agent_status::clear_codex_status,
             agent_status::install_codex_status_hooks,
             codex_usage::get_codex_quota,
-            obsidian::append_obsidian_note,
+            obsidian::append_obsidian_note, obsidian::append_obsidian_entry,
+            obsidian::get_obsidian_todos,
+            window::open_staged_file,
             media::media_play_pause, media::media_next, media::media_prev,
             media::media_seek,
             media::media_volume_up, media::media_volume_down,
@@ -104,6 +109,9 @@ pub fn run() {
             let is_minimized = Arc::new(AtomicBool::new(false));
             let expand_anim_id = Arc::new(AtomicU64::new(0));
             let indicator_color = Arc::new(Mutex::new(settings.indicator_color.clone()));
+            let capsule_opacity = Arc::new(Mutex::new(settings.capsule_opacity));
+            let capsule_scale = Arc::new(Mutex::new(settings.capsule_scale));
+            let rainbow_border = Arc::new(AtomicBool::new(settings.rainbow_border));
             let auto_start = Arc::new(AtomicBool::new(settings.auto_start));
             let blacklist_processes: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(
                 settings.blacklist_processes.iter().map(|s| s.trim().to_lowercase()).filter(|s| !s.is_empty()).collect()
@@ -136,6 +144,9 @@ pub fn run() {
                 expand_anim_id: expand_anim_id.clone(),
                 screen_w,
                 indicator_color: indicator_color.clone(),
+                capsule_opacity: capsule_opacity.clone(),
+                capsule_scale: capsule_scale.clone(),
+                rainbow_border: rainbow_border.clone(),
                 auto_start: auto_start.clone(),
                 blacklist_processes: blacklist_processes.clone(),
                 blacklist_enabled: blacklist_enabled.clone(),
@@ -187,6 +198,7 @@ pub fn run() {
             let music_expanded_m = music_expanded.clone();
             let expand_anim_id_m = expand_anim_id.clone();
             let is_minimized_m = is_minimized.clone();
+            let capsule_scale_m = capsule_scale.clone();
             let hwnd_raw = hwnd.0 as usize;
             let is_music = Arc::new(AtomicBool::new(false));
             let is_music_m = is_music.clone();
@@ -202,13 +214,15 @@ pub fn run() {
                         let music_exp = music_expanded_m.load(Ordering::Relaxed);
                         let view = current_view_m.lock().unwrap().clone();
                         let lyric_mode = lyric_mode_m.lock().unwrap().clone();
+                        let appearance_scale = *capsule_scale_m.lock().unwrap();
                         // 直接用实际窗口矩形判断鼠标是否在胶囊上
                         let rect = window::get_window_rect(hwnd);
                         let on_capsule = if let Some(rect) = rect {
                             let win_w = (rect.right - rect.left) as f64 / scale;
                             let win_h = (rect.bottom - rect.top) as f64 / scale;
 
-                            let (cw, ch, radius) = if is_minimized_m.load(Ordering::Relaxed) {
+                            let minimized = is_minimized_m.load(Ordering::Relaxed);
+                            let (cw, ch, radius) = if minimized {
                                 (MINIMIZED_W, MINIMIZED_H, MINIMIZED_H / 2.0)
                             } else if music_exp && view == "lyric" {
                                 // 音乐大面板：占满窗口
@@ -217,9 +231,20 @@ pub fn run() {
                                 (CAPSULE_EXPANDED_W, CAPSULE_EXPANDED_H, 28.0)
                             } else if view == "lyric" && is_music_m.load(Ordering::Relaxed) && lyric_mode != "off" {
                                 (CAPSULE_LYRIC_W, CAPSULE_COLLAPSED_H, CAPSULE_COLLAPSED_H / 2.0)
+                            } else if view == "lyric" {
+                                (CAPSULE_LYRIC_W, CAPSULE_COLLAPSED_H, CAPSULE_COLLAPSED_H / 2.0)
+                            } else if view == "journal" {
+                                (CAPSULE_JOURNAL_W, CAPSULE_COLLAPSED_H, CAPSULE_COLLAPSED_H / 2.0)
+                            } else if view == "tray" {
+                                (CAPSULE_TRAY_W, CAPSULE_COLLAPSED_H, CAPSULE_COLLAPSED_H / 2.0)
                             } else {
                                 // time 等收起态
                                 (CAPSULE_COLLAPSED_W, CAPSULE_COLLAPSED_H, CAPSULE_COLLAPSED_H / 2.0)
+                            };
+                            let (cw, ch, radius) = if minimized || music_exp {
+                                (cw, ch, radius)
+                            } else {
+                                (cw * appearance_scale, ch * appearance_scale, radius * appearance_scale)
                             };
 
                             let win_x = rect.left as f64;
@@ -255,17 +280,18 @@ pub fn run() {
                                 let _ = win_m.emit("set-expand", true);
                                 let gen = expand_anim_id_m.fetch_add(1, Ordering::Relaxed) + 1;
                                 let from_h = window::get_window_rect(hwnd).map(|r| (r.bottom - r.top) as f64 / scale).unwrap_or(60.0);
+                                let expanded_window_h = CAPSULE_EXPANDED_H * appearance_scale + 10.0;
                                 let anim_id = expand_anim_id_m.clone();
                                 let h_raw = hwnd.0 as usize;
                                 thread::spawn(move || {
-                                    window::animate_window_height(HWND(h_raw as *mut _), scale, from_h, WIN_H_DEFAULT, WIN_W, 350.0, anim_id, gen);
+                                    window::animate_window_height(HWND(h_raw as *mut _), scale, from_h, expanded_window_h, WIN_W, 350.0, anim_id, gen);
                                 });
                             } else if !on_capsule && exp_m.load(Ordering::Relaxed) {
                                 exp_m.store(false, Ordering::Relaxed);
                                 let _ = win_m.emit("set-expand", false);
                                 let gen = expand_anim_id_m.fetch_add(1, Ordering::Relaxed) + 1;
                                 let from_h = window::get_window_rect(hwnd).map(|r| (r.bottom - r.top) as f64 / scale).unwrap_or(WIN_H_DEFAULT);
-                                let collapsed_h = CAPSULE_COLLAPSED_H + 10.0;
+                                let collapsed_h = CAPSULE_COLLAPSED_H * appearance_scale + 10.0;
                                 let anim_id = expand_anim_id_m.clone();
                                 let h_raw = hwnd.0 as usize;
                                 thread::spawn(move || {
@@ -849,6 +875,9 @@ pub struct IslandState {
     pub expand_anim_id: Arc<AtomicU64>,
     pub screen_w: f64,
     pub indicator_color: Arc<Mutex<String>>,
+    pub capsule_opacity: Arc<Mutex<f64>>,
+    pub capsule_scale: Arc<Mutex<f64>>,
+    pub rainbow_border: Arc<AtomicBool>,
     pub auto_start: Arc<AtomicBool>,
     pub blacklist_processes: Arc<Mutex<Vec<String>>>,
     pub blacklist_enabled: Arc<AtomicBool>,

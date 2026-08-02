@@ -8,7 +8,8 @@
 
     /* ── 歌词收起态宽度（正在播放音乐时的歌词滚动条） ──
        后端: CAPSULE_LYRIC_W = 340.0 (lib.rs) */
-    --lyric-collapsed-w: 340px;
+    --lyric-collapsed-w: 190px;
+    --journal-collapsed-w: 250px;
 
     /* ── 悬浮展开态（鼠标靠近时的展开尺寸，适用于 time / lyric 等视图） ──
        后端: CAPSULE_EXPANDED_W = 330.0, CAPSULE_EXPANDED_H = 74.0 (lib.rs) */
@@ -681,10 +682,7 @@ html, body {
 
 /* --- 最小化动画 --- */
 #island-capsule.minimizing {
-    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
-                opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-    transform: scale(0);
-    opacity: 0;
+    animation: capsule-rise-out .3s cubic-bezier(.4, 0, .2, 1) both;
     will-change: transform, opacity;
     pointer-events: none;
 }
@@ -692,14 +690,21 @@ html, body {
     width: 0 !important; height: 0 !important;
     opacity: 0;
     pointer-events: none;
-    transform: scale(0);
+    transform: translateY(-58px) scale(.94);
 }
 #island-capsule.expanding {
-    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
-                opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-    transform: scale(1);
-    opacity: 1;
+    animation: capsule-drop-in .3s cubic-bezier(.2, .8, .2, 1) both;
     will-change: transform, opacity;
+}
+
+@keyframes capsule-rise-out {
+    from { transform: translateY(0) scale(1); opacity: 1; }
+    to { transform: translateY(-58px) scale(.94); opacity: 0; }
+}
+
+@keyframes capsule-drop-in {
+    from { transform: translateY(-58px) scale(.94); opacity: 0; }
+    to { transform: translateY(0) scale(1); opacity: 1; }
 }
 
 body.minimized { padding-top: 0; }
@@ -1785,4 +1790,620 @@ body.minimized #collapsed-indicator { display: block; }
 
 #island-capsule.sadb-idle #sadb-resize-handle {
     display: none;
+}
+
+/* ============================================================
+   Wisland 页面系统：主页 / 音乐 / 日记
+   ============================================================ */
+
+#island-capsule.view-journal:not(.expanded) {
+    width: var(--journal-collapsed-w);
+}
+
+/* ── 主页 L 态补充信息 ── */
+#home-date,
+#codex-quota-label,
+#codex-status-label {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+    color: rgba(255, 255, 255, .48);
+    font-size: 9px;
+    font-weight: 600;
+    line-height: 1;
+    white-space: nowrap;
+    transition: opacity .18s ease .08s, transform .22s cubic-bezier(.2, .8, .2, 1);
+}
+
+#home-date {
+    top: 6px;
+    left: 50%;
+    transform: translate(-50%, -3px);
+    letter-spacing: .35px;
+}
+
+#codex-quota-label {
+    bottom: 6px;
+    left: calc(50% - 66px);
+    transform: translateY(3px);
+}
+
+#codex-status-label {
+    bottom: 6px;
+    right: calc(50% - 66px);
+    transform: translateY(3px);
+}
+
+#island-capsule.expanded #home-date,
+#island-capsule.expanded #codex-quota-label,
+#island-capsule.expanded #codex-status-label {
+    opacity: 1;
+    transform: translate(-50%, 0);
+}
+
+#island-capsule.expanded #codex-quota-label,
+#island-capsule.expanded #codex-status-label {
+    transform: translateY(0);
+}
+
+#island-capsule.expanded #time-wrapper {
+    padding: 0 42px 0 48px;
+}
+
+/* ── 左侧页面图标 ── */
+#view-switcher {
+    top: 50%;
+    bottom: auto;
+    left: 9px;
+    transform: translateY(-50%);
+    width: 20px;
+}
+
+#view-dots {
+    flex-direction: column;
+    gap: 2px;
+}
+
+#view-dots .view-dot {
+    width: 18px;
+    height: 17px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: 6px;
+    color: rgba(255, 255, 255, .32);
+    background: transparent;
+}
+
+#view-dots .view-dot:hover {
+    color: rgba(255, 255, 255, .72);
+    background: rgba(255, 255, 255, .07);
+}
+
+#view-dots .view-dot.active {
+    width: 18px;
+    color: rgba(255, 255, 255, .96);
+    background: rgba(255, 255, 255, .11);
+}
+
+#view-dots .view-dot svg {
+    width: 10px;
+    height: 10px;
+    fill: currentColor;
+}
+
+/* ── 音乐页 ── */
+#lyric-area {
+    --music-accent: #78d6ff;
+    padding: 0 13px;
+    gap: 10px;
+}
+
+#lyric-area .vinyl-disc {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    overflow: hidden;
+    animation: none;
+    background: #202228;
+}
+
+#lyric-area .vinyl-grooves,
+#lyric-area .vinyl-center {
+    display: none;
+}
+
+#lyric-area .vinyl-cover {
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border-radius: inherit;
+    transform: none;
+    background-size: cover;
+    background-position: center;
+}
+
+#music-waveform {
+    height: 28px;
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 3px;
+    overflow: hidden;
+}
+
+#music-waveform span {
+    width: 3px;
+    height: 38%;
+    border-radius: 4px;
+    background: var(--music-accent);
+    box-shadow: 0 0 7px color-mix(in srgb, var(--music-accent), transparent 50%);
+    animation: music-wave 1.05s ease-in-out infinite alternate;
+}
+
+#music-waveform span:nth-child(2) { animation-delay: -.72s; }
+#music-waveform span:nth-child(3) { animation-delay: -.38s; }
+#music-waveform span:nth-child(4) { animation-delay: -.91s; }
+#music-waveform span:nth-child(5) { animation-delay: -.2s; }
+#music-waveform span:nth-child(6) { animation-delay: -.58s; }
+#music-waveform span:nth-child(7) { animation-delay: -.83s; }
+#music-waveform.paused span { animation-play-state: paused; opacity: .46; }
+
+@keyframes music-wave {
+    from { height: 22%; opacity: .58; }
+    to { height: 92%; opacity: 1; }
+}
+
+#island-capsule:not(.expanded) #lyric-text-wrap,
+#island-capsule:not(.expanded) #lyric-area .media-controls {
+    display: none;
+}
+
+#island-capsule.expanded #lyric-area {
+    padding: 7px 9px 7px 38px;
+    gap: 8px;
+}
+
+#island-capsule.expanded #lyric-area .vinyl-disc {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+}
+
+#island-capsule.expanded #music-waveform {
+    display: none;
+}
+
+#island-capsule.expanded #lyric-text-wrap {
+    display: flex;
+    align-self: stretch;
+}
+
+#island-capsule.expanded #lyric-text {
+    max-height: 34px;
+    font-size: 12px;
+    line-height: 1.35;
+    white-space: normal;
+    overflow: hidden;
+}
+
+#island-capsule.expanded #lyric-text-inner {
+    display: -webkit-box;
+    white-space: normal;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+}
+
+#island-capsule.expanded #lyric-meta {
+    font-size: 9px !important;
+    margin-top: 2px;
+}
+
+#island-capsule.expanded #lyric-area .progress-bar {
+    height: 4px;
+    margin-top: 3px;
+}
+
+#island-capsule.expanded #lyric-area .media-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    max-width: 24px;
+    opacity: 1;
+    overflow: visible;
+    pointer-events: auto;
+}
+
+#island-capsule.expanded #lyric-area .media-btn,
+#island-capsule.expanded #lyric-area .media-btn.play-btn {
+    width: 22px;
+    height: 18px;
+    min-height: 18px;
+    border-radius: 6px;
+}
+
+#island-capsule.expanded #lyric-area .media-btn svg {
+    width: 11px;
+    height: 11px;
+}
+
+/* ── 日记页 ── */
+#journal-area {
+    display: none;
+    padding: 0 15px;
+}
+
+#journal-summary {
+    width: 100%;
+    min-width: 0;
+    height: 40px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 1px;
+    overflow: hidden;
+    font-size: 10px;
+    line-height: 12px;
+    color: rgba(255, 255, 255, .76);
+}
+
+.journal-empty {
+    width: 100%;
+    text-align: center;
+    color: rgba(255, 255, 255, .42);
+}
+
+.journal-todo-row {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.journal-todo-marker {
+    width: 6px;
+    height: 6px;
+    flex: 0 0 6px;
+    border: 1px solid rgba(255, 255, 255, .44);
+    border-radius: 2px;
+}
+
+.journal-todo-text {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.journal-more {
+    padding-left: 12px;
+    color: rgba(255, 255, 255, .42);
+    font-weight: 700;
+}
+
+#journal-composer {
+    display: none;
+}
+
+#island-capsule.expanded #journal-summary {
+    display: none;
+}
+
+#island-capsule.expanded #journal-area {
+    padding: 7px 9px 7px 37px;
+}
+
+#island-capsule.expanded #journal-composer {
+    width: 100%;
+    height: 100%;
+    display: grid;
+    grid-template-columns: 38px minmax(0, 1fr) 24px;
+    align-items: stretch;
+    gap: 7px;
+}
+
+#journal-kind,
+#journal-actions {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+}
+
+#journal-kind button,
+#journal-actions button {
+    height: 23px;
+    border: 0;
+    border-radius: 7px;
+    color: rgba(255, 255, 255, .56);
+    background: rgba(255, 255, 255, .06);
+    cursor: pointer;
+    font-size: 9px;
+    font-weight: 650;
+}
+
+#journal-kind button.active {
+    color: #fff;
+    background: rgba(139, 92, 246, .42);
+}
+
+#journal-input {
+    min-width: 0;
+    width: 100%;
+    height: 60px;
+    padding: 7px 9px;
+    resize: none;
+    border: 1px solid rgba(255, 255, 255, .1);
+    border-radius: 10px;
+    outline: none;
+    color: rgba(255, 255, 255, .94);
+    background: rgba(255, 255, 255, .055);
+    font: 11px/1.35 var(--font-main);
+    user-select: text;
+    -webkit-user-select: text;
+}
+
+#journal-input:focus { border-color: rgba(139, 92, 246, .72); }
+#journal-input.input-error { border-color: rgba(255, 102, 119, .82); }
+#journal-input::placeholder { color: rgba(255, 255, 255, .32); }
+
+#journal-actions button {
+    width: 24px;
+    padding: 0;
+    font-size: 14px;
+}
+
+#journal-save {
+    color: #9af0b8 !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    #music-waveform span { animation: none; }
+}
+
+/* ── 临时文件托盘 ── */
+#island-capsule.view-tray:not(.expanded) {
+    width: var(--tray-collapsed-w, 190px);
+}
+
+#file-drop-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 40;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border-radius: inherit;
+    opacity: 0;
+    transform: scale(.98);
+    pointer-events: none;
+    color: rgba(255, 255, 255, .94);
+    background: rgba(12, 14, 18, .96);
+    box-shadow: inset 0 0 0 1px rgba(121, 221, 24, .4);
+    transition: opacity .16s ease, transform .18s ease;
+}
+
+#file-drop-overlay.active {
+    opacity: 1;
+    transform: scale(1);
+}
+
+#file-drop-overlay svg {
+    width: 18px;
+    height: 18px;
+    fill: none;
+    stroke: #79dd18;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+#file-drop-overlay span {
+    font-size: 11px;
+    font-weight: 650;
+}
+
+#tray-area {
+    display: none;
+    padding: 0 14px;
+}
+
+#tray-summary {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    font-size: 11px;
+    color: rgba(255, 255, 255, .72);
+}
+
+.tray-summary-icon {
+    color: rgba(255, 255, 255, .42);
+    font-size: 18px;
+    transform: rotate(180deg);
+}
+
+#tray-count {
+    min-width: 17px;
+    height: 17px;
+    padding: 0 5px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9px;
+    color: #fff;
+    background: rgba(255, 255, 255, .1);
+    font-size: 9px;
+}
+
+#tray-list,
+#tray-empty {
+    display: none;
+}
+
+#island-capsule.expanded #tray-area {
+    padding: 7px 8px 7px 37px;
+}
+
+#island-capsule.expanded #tray-summary {
+    display: none;
+}
+
+#island-capsule.expanded #tray-list {
+    position: relative;
+    width: 100%;
+    height: 60px;
+    display: flex;
+    align-items: stretch;
+    gap: 5px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+}
+
+#island-capsule.expanded #tray-list::-webkit-scrollbar {
+    display: none;
+}
+
+#island-capsule.expanded #tray-empty.visible {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px dashed rgba(255, 255, 255, .16);
+    border-radius: 11px;
+    color: rgba(255, 255, 255, .38);
+    font-size: 10px;
+}
+
+.tray-file {
+    width: 76px;
+    min-width: 76px;
+    height: 60px;
+    padding: 6px 6px 5px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    border-radius: 10px;
+    color: rgba(255, 255, 255, .68);
+    background: rgba(255, 255, 255, .045);
+    border: 1px solid transparent;
+    cursor: default;
+}
+
+.tray-file:hover {
+    background: rgba(255, 255, 255, .08);
+}
+
+.tray-file.selected {
+    color: #fff;
+    border-color: rgba(121, 221, 24, .46);
+    background: rgba(121, 221, 24, .08);
+}
+
+.tray-file-badge {
+    max-width: 52px;
+    height: 24px;
+    padding: 0 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    color: rgba(255, 255, 255, .78);
+    background: rgba(255, 255, 255, .09);
+    font-size: 7px;
+    font-weight: 750;
+    letter-spacing: .2px;
+}
+
+.tray-file-name {
+    width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: center;
+    font-size: 8px;
+}
+
+#tray-context-menu {
+    position: absolute;
+    z-index: 50;
+    min-width: 88px;
+    padding: 4px;
+    border: 1px solid rgba(255, 255, 255, .1);
+    border-radius: 9px;
+    background: rgba(24, 25, 29, .98);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .38);
+}
+
+#tray-context-menu[hidden] { display: none; }
+
+#tray-context-menu button {
+    width: 100%;
+    height: 24px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: 6px;
+    color: rgba(255, 255, 255, .76);
+    background: transparent;
+    text-align: left;
+    font-size: 9px;
+    cursor: pointer;
+}
+
+#tray-context-menu button:hover {
+    color: #fff;
+    background: rgba(255, 255, 255, .08);
+}
+
+#tray-remove:hover { color: #ff8995 !important; }
+
+/* ── 启动动画与可选动态细边框 ── */
+#island-capsule.launching {
+    animation: wisland-launch .58s cubic-bezier(.18, .88, .28, 1.12) both;
+}
+
+@keyframes wisland-launch {
+    0% { opacity: 0; transform: translateY(-28px) scale(.74); }
+    62% { opacity: 1; transform: translateY(2px) scale(1.025); }
+    100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+#island-capsule::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    padding: 1px;
+    border-radius: inherit;
+    opacity: 0;
+    pointer-events: none;
+    background: conic-gradient(from var(--rainbow-angle, 0deg), #70e6ff, #9b7cff, #ff72b5, #ffd56b, #70e6ff);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    transition: opacity .2s ease;
+}
+
+#island-capsule.rainbow-border::before {
+    opacity: .72;
+    animation: wisland-rainbow 4s linear infinite;
+}
+
+@property --rainbow-angle {
+    syntax: "<angle>";
+    inherits: false;
+    initial-value: 0deg;
+}
+
+@keyframes wisland-rainbow {
+    to { --rainbow-angle: 360deg; }
 }

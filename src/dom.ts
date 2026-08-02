@@ -11,15 +11,16 @@ export const currentViewContainer = required<HTMLDivElement>("current-view");
 export const viewHolder = required<HTMLDivElement>("view-holder");
 export const timeWrapper = required<HTMLDivElement>("time-wrapper");
 export const timeText = required<HTMLDivElement>("time-text");
+export const homeDate = required<HTMLDivElement>("home-date");
 export const codexQuotaRing = required<HTMLDivElement>("codex-quota-ring");
 export const codexQuotaProgress = required<SVGCircleElement>("codex-quota-progress");
+export const codexQuotaLabel = required<HTMLDivElement>("codex-quota-label");
 export const codexStatusDot = required<HTMLDivElement>("codex-status-dot");
+export const codexStatusLabel = required<HTMLDivElement>("codex-status-label");
 export const noticeArea = required<HTMLDivElement>("notice-area");
-export const quickNoteArea = required<HTMLFormElement>("quick-note-area");
-export const quickNoteInput = required<HTMLInputElement>("quick-note-input");
-export const quickNoteSave = required<HTMLButtonElement>("quick-note-save");
-export const quickNoteCancel = required<HTMLButtonElement>("quick-note-cancel");
+export const fileDropOverlay = required<HTMLDivElement>("file-drop-overlay");
 export const lyricArea = required<HTMLDivElement>("lyric-area");
+export const musicWaveform = required<HTMLDivElement>("music-waveform");
 export const lyricText = required<HTMLDivElement>("lyric-text");
 export const lyricTextInner = required<HTMLSpanElement>("lyric-text-inner");
 export const lyricMeta = required<HTMLDivElement>("lyric-meta");
@@ -56,8 +57,26 @@ export const privacyIndicators = required<HTMLDivElement>("privacy-indicators");
 export const privacyMic = required<HTMLDivElement>("privacy-mic");
 export const privacyCamera = required<HTMLDivElement>("privacy-camera");
 export const collapsedIndicator = required<HTMLDivElement>("collapsed-indicator");
+export const journalArea = required<HTMLDivElement>("journal-area");
+export const journalSummary = required<HTMLDivElement>("journal-summary");
+export const journalComposer = required<HTMLFormElement>("journal-composer");
+export const journalKindNote = required<HTMLButtonElement>("journal-kind-note");
+export const journalKindTodo = required<HTMLButtonElement>("journal-kind-todo");
+export const journalInput = required<HTMLTextAreaElement>("journal-input");
+export const journalSave = required<HTMLButtonElement>("journal-save");
+export const journalCancel = required<HTMLButtonElement>("journal-cancel");
+export const trayArea = required<HTMLDivElement>("tray-area");
+export const traySummary = required<HTMLDivElement>("tray-summary");
+export const trayCount = required<HTMLElement>("tray-count");
+export const trayList = required<HTMLDivElement>("tray-list");
+export const trayEmpty = required<HTMLDivElement>("tray-empty");
+export const trayContextMenu = required<HTMLDivElement>("tray-context-menu");
+export const trayCopy = required<HTMLButtonElement>("tray-copy");
+export const trayRemove = required<HTMLButtonElement>("tray-remove");
 
 export const viewElements: Record<ViewMode, HTMLElement> = {
   time: timeWrapper,
   lyric: lyricArea,
+  journal: journalArea,
+  tray: trayArea,
 };

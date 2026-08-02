@@ -40,7 +40,19 @@
             </label>
             <label class="setting-row">
               <span><strong>收起指示器颜色</strong><small>胶囊最小化后的小横条颜色。</small></span>
-              <input id="indicator-color" type="color" value="#2edb67" />
+              <input id="indicator-color" type="color" value="#ffffff" />
+            </label>
+            <label class="setting-row">
+              <span><strong>不透明度</strong><small>只调整胶囊本体，不影响桌面其他区域。</small></span>
+              <span class="range-control"><input id="capsule-opacity" type="range" min="60" max="100" value="100" /><output id="capsule-opacity-value">100%</output></span>
+            </label>
+            <label class="setting-row">
+              <span><strong>胶囊大小</strong><small>在 90% 到 115% 之间调整整体尺寸。</small></span>
+              <span class="range-control"><input id="capsule-scale" type="range" min="90" max="115" value="100" /><output id="capsule-scale-value">100%</output></span>
+            </label>
+            <label class="setting-row">
+              <span><strong>动态炫彩边框</strong><small>使用很细的流动色边，避免喧宾夺主。</small></span>
+              <input id="rainbow-border" type="checkbox" class="toggle" />
             </label>
           </div>
         </section>

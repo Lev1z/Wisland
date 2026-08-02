@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { codexQuotaProgress, codexQuotaRing } from "../dom";
+import { codexQuotaLabel, codexQuotaProgress, codexQuotaRing } from "../dom";
 
 type CodexQuota = {
   available: boolean;
@@ -26,6 +26,7 @@ function render(quota: CodexQuota): void {
     codexQuotaProgress.style.strokeDashoffset = String(CIRCUMFERENCE);
     codexQuotaRing.title = "Codex 剩余额度未知；需要可调用的独立 Codex CLI";
     codexQuotaRing.setAttribute("aria-label", codexQuotaRing.title);
+    codexQuotaLabel.textContent = "--%";
     return;
   }
 
@@ -37,6 +38,7 @@ function render(quota: CodexQuota): void {
     : "";
   codexQuotaRing.title = `Codex 剩余 ${Math.round(normalized)}% · ${windowLabel(quota.windowDurationMins)}${reset}`;
   codexQuotaRing.setAttribute("aria-label", codexQuotaRing.title);
+  codexQuotaLabel.textContent = `${Math.round(normalized)}%`;
 }
 
 async function refresh(): Promise<void> {

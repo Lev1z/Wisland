@@ -4,6 +4,9 @@ type CoreSettings = {
   lyric_mode?: string;
   lyric_offset_enabled?: boolean;
   indicator_color?: string;
+  capsule_opacity?: number;
+  capsule_scale?: number;
+  rainbow_border?: boolean;
   obsidian_vault_path?: string;
   obsidian_daily_notes_dir?: string;
 };
@@ -34,6 +37,11 @@ const description = element<HTMLParagraphElement>("page-description");
 const status = element<HTMLSpanElement>("save-status");
 const autoStart = element<HTMLInputElement>("auto-start");
 const indicatorColor = element<HTMLInputElement>("indicator-color");
+const capsuleOpacity = element<HTMLInputElement>("capsule-opacity");
+const capsuleOpacityValue = element<HTMLOutputElement>("capsule-opacity-value");
+const capsuleScale = element<HTMLInputElement>("capsule-scale");
+const capsuleScaleValue = element<HTMLOutputElement>("capsule-scale-value");
+const rainbowBorder = element<HTMLInputElement>("rainbow-border");
 const lyricMode = element<HTMLSelectElement>("lyric-mode");
 const lyricOffsetEnabled = element<HTMLInputElement>("lyric-offset-enabled");
 const smtcWhitelistEnabled = element<HTMLInputElement>("smtc-whitelist-enabled");
@@ -58,6 +66,11 @@ function showStatus(message: string, error = false): void {
   window.setTimeout(() => {
     if (status.textContent === message) status.textContent = "";
   }, 3000);
+}
+
+function updateRangeLabels(): void {
+  capsuleOpacityValue.value = `${capsuleOpacity.value}%`;
+  capsuleScaleValue.value = `${capsuleScale.value}%`;
 }
 
 function renderCodexStatus(value: CodexStatus): void {
@@ -100,7 +113,11 @@ async function loadSettings(): Promise<void> {
       invoke<string>("get_log_level"),
     ]);
     autoStart.checked = startsWithWindows;
-    indicatorColor.value = core.indicator_color || "#2edb67";
+    indicatorColor.value = core.indicator_color || "#ffffff";
+    capsuleOpacity.value = String(Math.round((core.capsule_opacity ?? 1) * 100));
+    capsuleScale.value = String(Math.round((core.capsule_scale ?? 1) * 100));
+    rainbowBorder.checked = core.rainbow_border ?? false;
+    updateRangeLabels();
     lyricMode.value = core.lyric_mode || "off";
     lyricOffsetEnabled.checked = core.lyric_offset_enabled ?? true;
     blacklistEnabled.checked = blacklistOn;
@@ -126,6 +143,11 @@ saveButton.addEventListener("click", async () => {
         lyricMode: lyricMode.value,
         lyricOffsetEnabled: lyricOffsetEnabled.checked,
       }),
+      invoke("set_appearance_preferences", {
+        opacity: Number(capsuleOpacity.value) / 100,
+        scale: Number(capsuleScale.value) / 100,
+        rainbowBorder: rainbowBorder.checked,
+      }),
       invoke("set_auto_start", { enabled: autoStart.checked }),
       invoke("set_blacklist_enabled", { enabled: blacklistEnabled.checked }),
       invoke("save_blacklist", { processes: lines(blacklist.value) }),
@@ -145,6 +167,9 @@ saveButton.addEventListener("click", async () => {
     saveButton.disabled = false;
   }
 });
+
+capsuleOpacity.addEventListener("input", updateRangeLabels);
+capsuleScale.addEventListener("input", updateRangeLabels);
 
 element<HTMLButtonElement>("open-log-dir").addEventListener("click", () => {
   void invoke("open_log_dir");

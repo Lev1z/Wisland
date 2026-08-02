@@ -1,7 +1,7 @@
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import {
-  lyricTextInner, lyricMeta,
+  lyricArea, lyricTextInner, lyricMeta,
   mpLyricText,
   vinylCover,
   musicPanelCoverImg, musicPanelSong, musicPanelArtist,
@@ -27,6 +27,45 @@ import {
 import { formatTime } from "../utils";
 import { updatePlayIcon, updateSwitcherUI } from "./view-switcher";
 import { resetMpLyricFlipState } from "./lyric-renderer";
+
+function applyAlbumAccent(source: string): void {
+  if (!source) {
+    lyricArea.style.removeProperty("--music-accent");
+    return;
+  }
+  const image = new Image();
+  image.onload = () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 12;
+    canvas.height = 12;
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    if (!context) return;
+    context.drawImage(image, 0, 0, 12, 12);
+    const pixels = context.getImageData(0, 0, 12, 12).data;
+    let red = 0;
+    let green = 0;
+    let blue = 0;
+    let weight = 0;
+    for (let index = 0; index < pixels.length; index += 4) {
+      if (pixels[index + 3] < 96) continue;
+      const r = pixels[index];
+      const g = pixels[index + 1];
+      const b = pixels[index + 2];
+      const range = Math.max(r, g, b) - Math.min(r, g, b);
+      const brightness = (r + g + b) / 3;
+      const sampleWeight = 1 + range / 72;
+      if (brightness < 22 || brightness > 242) continue;
+      red += r * sampleWeight;
+      green += g * sampleWeight;
+      blue += b * sampleWeight;
+      weight += sampleWeight;
+    }
+    if (weight === 0) return;
+    const lift = (value: number) => Math.round(Math.max(74, Math.min(235, value / weight)));
+    lyricArea.style.setProperty("--music-accent", `rgb(${lift(red)}, ${lift(green)}, ${lift(blue)})`);
+  };
+  image.src = source;
+}
 
 // ===== 面板音量滑块 =====
 
@@ -103,10 +142,12 @@ export function initMusicControls() {
       setCurrentThumbnailUrl(event.payload.thumbnail);
       vinylCover.style.backgroundImage = `url(${event.payload.thumbnail})`;
       musicPanelCoverImg.style.backgroundImage = `url(${event.payload.thumbnail})`;
+      applyAlbumAccent(event.payload.thumbnail);
     } else {
       setCurrentThumbnailUrl("");
       vinylCover.style.backgroundImage = "";
       musicPanelCoverImg.style.backgroundImage = "";
+      applyAlbumAccent("");
     }
 
     // 更新时长
@@ -141,6 +182,7 @@ export function initMusicControls() {
       setCurrentThumbnailUrl(event.payload.thumbnail);
       vinylCover.style.backgroundImage = `url(${event.payload.thumbnail})`;
       musicPanelCoverImg.style.backgroundImage = `url(${event.payload.thumbnail})`;
+      applyAlbumAccent(event.payload.thumbnail);
     }
   });
 

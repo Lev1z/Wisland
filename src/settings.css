@@ -51,6 +51,9 @@ select:focus, textarea:focus, input[type="text"]:focus { border-color: #2edb67; 
 .secondary-button.compact { margin: 0; }
 .status-pill { flex: none !important; display: inline-flex !important; padding: 5px 9px; border-radius: 999px; color: #aab2c1; background: #252a34; font-size: 11px; }
 input[type="color"] { width: 52px; height: 34px; padding: 3px; border: 1px solid #333947; border-radius: 8px; background: #0f1116; }
+.range-control { display: flex !important; grid-auto-flow: column; grid-template-columns: 150px 42px; align-items: center; gap: 10px !important; }
+.range-control input[type="range"] { width: 150px; accent-color: #2edb67; }
+.range-control output { color: #aab2c1; font-size: 12px; font-variant-numeric: tabular-nums; text-align: right; }
 .toggle { appearance: none; width: 42px; height: 24px; border-radius: 999px; background: #3a404d; position: relative; cursor: pointer; transition: .2s; }
 .toggle::after { content: ""; position: absolute; width: 18px; height: 18px; left: 3px; top: 3px; border-radius: 50%; background: #fff; transition: .2s; }
 .toggle:checked { background: #2edb67; }

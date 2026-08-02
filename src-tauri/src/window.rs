@@ -213,11 +213,11 @@ pub fn start_drag(state: tauri::State<'_, IslandState>) {
 }
 
 #[tauri::command]
-pub fn end_drag(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>) {
+pub fn end_drag(window: tauri::WebviewWindow, state: tauri::State<'_, IslandState>) -> bool {
     state.is_dragging.store(false, Ordering::Relaxed);
 
     if state.music_expanded.load(Ordering::Relaxed) {
-        return;
+        return false;
     }
 
     let scale = window.scale_factor().unwrap_or(1.0);
@@ -231,9 +231,13 @@ pub fn end_drag(window: tauri::WebviewWindow, state: tauri::State<'_, IslandStat
     if let Ok(pos) = window.outer_position() {
         let cx = pos.x as f64 / scale;
         let cy = pos.y as f64 / scale;
+        if cy <= -12.0 {
+            return true;
+        }
         let w = window.clone();
         thread::spawn(move || { snap_back(&w, cx, cy, target_x, target_y); });
     }
+    false
 }
 
 #[tauri::command]
@@ -458,7 +462,7 @@ pub fn dismiss_island(state: tauri::State<'_, IslandState>, window: tauri::Webvi
 #[tauri::command]
 pub fn set_current_view(state: tauri::State<'_, IslandState>, view: String) {
     let normalized = match view.as_str() {
-        "time" | "lyric" => view,
+        "time" | "lyric" | "journal" | "tray" => view,
         _ => "time".to_string(),
     };
     *state.current_view.lock().unwrap() = normalized;
@@ -468,6 +472,19 @@ pub fn set_current_view(state: tauri::State<'_, IslandState>, view: String) {
 pub fn set_interacting(state: tauri::State<'_, IslandState>, active: bool) {
     state.is_interacting.store(active, Ordering::Relaxed);
     state.is_expanded.store(active, Ordering::Relaxed);
+}
+
+#[tauri::command]
+pub fn open_staged_file(path: String) -> Result<(), String> {
+    let path = std::path::PathBuf::from(path.trim());
+    if !path.exists() {
+        return Err("文件已经不存在".into());
+    }
+    std::process::Command::new("explorer.exe")
+        .arg(&path)
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("无法打开文件：{error}"))
 }
 
 #[tauri::command]

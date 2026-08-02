@@ -1,4 +1,4 @@
-export type ViewMode = "time" | "lyric";
+export type ViewMode = "time" | "lyric" | "journal" | "tray";
 
 export type PrivacyUsagePayload = {
   microphone: boolean;

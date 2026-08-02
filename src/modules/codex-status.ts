@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
-import { codexStatusDot } from "../dom";
+import { codexStatusDot, codexStatusLabel } from "../dom";
+import { applyIndicatorStatus } from "./minimize-drag";
 
 type CodexPhase = "idle" | "running" | "completed" | "failed" | "stale";
 
@@ -17,19 +18,23 @@ function render(status: CodexStatus): void {
     case "running":
       codexStatusDot.classList.add("status-running");
       codexStatusDot.title = "Codex 正在执行任务";
+      codexStatusLabel.textContent = "工作";
       break;
     case "completed":
     case "idle":
       codexStatusDot.classList.add("status-idle");
       codexStatusDot.title = status.phase === "completed" ? "Codex 任务已完成" : "Codex 空闲";
+      codexStatusLabel.textContent = status.phase === "completed" ? "完成" : "空闲";
       break;
     case "failed":
     case "stale":
     default:
       codexStatusDot.classList.add("status-special");
       codexStatusDot.title = status.phase === "failed" ? "Codex 状态异常" : "Codex 离线或状态未知";
+      codexStatusLabel.textContent = status.phase === "failed" ? "异常" : "离线";
   }
   codexStatusDot.setAttribute("aria-label", codexStatusDot.title);
+  applyIndicatorStatus(status.phase, status.updatedAt > 0);
   lastPhase = status.phase;
 }
 
