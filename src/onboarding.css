@@ -1,0 +1,71 @@
+:root {
+  color: #f2f4fa;
+  background: #0a0a0a;
+  font-family: Inter, "Segoe UI Variable", "Microsoft YaHei UI", sans-serif;
+  font-synthesis: none;
+  --accent: #5540df;
+  --muted: #858b99;
+  --line: #292929;
+  --surface: #151515;
+}
+
+* { box-sizing: border-box; }
+html, body { width: 100%; height: 100%; overflow: hidden; }
+body { border: 1px solid #242424; }
+button { font: inherit; }
+
+.titlebar {
+  height: 38px;
+  padding: 0 8px 0 15px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #727989;
+  background: #080808;
+  border-bottom: 1px solid #242424;
+  font: 650 10px/1 Inter, sans-serif;
+  letter-spacing: .14em;
+  user-select: none;
+}
+.titlebar i { color: #7868ea; font-style: normal; }
+.titlebar button { padding: 7px 10px; border: 0; border-radius: 7px; color: #888f9e; background: transparent; font-size: 11px; letter-spacing: 0; cursor: pointer; }
+.titlebar button:hover { color: #fff; background: #242424; }
+
+main { height: calc(100% - 38px); padding: 25px 31px 22px; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 19px; }
+.intro { display: grid; grid-template-columns: 58px 1fr; gap: 18px; align-items: center; }
+.intro img { width: 58px; height: 58px; object-fit: contain; }
+.eyebrow { margin: 0 0 6px; color: #7868ea; font: 700 9px/1 Inter, sans-serif; letter-spacing: .16em; }
+.intro h1 { margin: 0; font-size: 24px; letter-spacing: -.035em; }
+.intro p:last-child { margin: 7px 0 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
+
+.check-list { min-height: 0; display: grid; align-content: start; gap: 7px; overflow: auto; scrollbar-width: thin; scrollbar-color: #3a3a3a transparent; }
+.check-row { min-height: 57px; padding: 10px 12px; display: grid; grid-template-columns: 27px minmax(0, 1fr) auto; align-items: center; gap: 10px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); }
+.check-icon { width: 22px; height: 22px; display: grid; place-items: center; border-radius: 50%; font-size: 12px; font-weight: 800; }
+.check-row.ok .check-icon { color: #09150f; background: #62dfa0; }
+.check-row.pending .check-icon { color: #201700; background: #e5b552; }
+.check-row.missing .check-icon { color: #21090d; background: #ee7181; }
+.check-copy { min-width: 0; }
+.check-copy strong { display: block; margin-bottom: 3px; font-size: 13px; font-weight: 650; }
+.check-copy small { display: block; color: var(--muted); font-size: 11px; line-height: 1.45; overflow-wrap: anywhere; }
+.check-action { min-width: 68px; padding: 7px 10px; border: 1px solid #3b3b3b; border-radius: 8px; color: #e3e5eb; background: #282828; font-size: 11px; font-weight: 620; cursor: pointer; }
+.check-action:hover { border-color: #6354da; background: #302c4d; }
+.check-action:disabled { opacity: .5; cursor: wait; }
+.session-list { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 5px; }
+.session-chip { max-width: 100%; padding: 3px 7px; border: 1px solid #333; border-radius: 999px; color: #aeb4c1; background: #202020; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.session-chip.accepted { color: #9fe8c0; border-color: #315b46; }
+.session-chip button { margin-left: 5px; padding: 0; border: 0; color: #b6acff; background: transparent; font-size: 10px; cursor: pointer; }
+
+footer { padding-top: 16px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+footer > span { color: var(--muted); font-size: 11px; }
+footer > div { display: flex; gap: 8px; }
+footer button { padding: 10px 16px; border: 0; border-radius: 9px; color: #fff; font-size: 12px; font-weight: 650; cursor: pointer; }
+footer button:disabled { opacity: .55; cursor: wait; }
+.secondary { background: #292929; }
+.secondary:hover { background: #373737; }
+.primary { background: var(--accent); }
+.primary:hover { background: #644ff0; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .check-row { animation: enter .32s ease both; animation-delay: calc(var(--index, 0) * 35ms); }
+  @keyframes enter { from { opacity: 0; transform: translateY(5px); } }
+}

@@ -77,7 +77,7 @@ fn is_codex_desktop_executable(path: &str) -> bool {
 }
 
 #[cfg(windows)]
-fn codex_desktop_running() -> bool {
+pub(crate) fn codex_desktop_running() -> bool {
     unsafe {
         let Ok(snapshot) = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) else {
             return false;
@@ -130,8 +130,23 @@ fn codex_desktop_running() -> bool {
 }
 
 #[cfg(not(windows))]
-fn codex_desktop_running() -> bool {
+pub(crate) fn codex_desktop_running() -> bool {
     true
+}
+
+fn contains_managed_hooks(content: &str) -> bool {
+    content.lines().any(|line| line.trim() == MANAGED_BEGIN)
+        && content.lines().any(|line| line.trim() == MANAGED_END)
+}
+
+pub(crate) fn codex_hooks_installed() -> bool {
+    let config = dirs::home_dir()
+        .map(|directory| directory.join(".codex").join("config.toml"))
+        .and_then(|path| fs::read_to_string(path).ok())
+        .is_some_and(|content| contains_managed_hooks(&content));
+    config
+        && data_dir().join(RUNNING_SCRIPT_NAME).is_file()
+        && data_dir().join(STATUS_SCRIPT_NAME).is_file()
 }
 
 fn visible_running(now: u64) -> bool {
@@ -323,5 +338,14 @@ mod tests {
         assert!(!is_codex_desktop_executable(
             r"C:\Users\PC\.vscode\extensions\openai.chatgpt\bin\codex.exe"
         ));
+    }
+
+    #[test]
+    fn managed_hook_detection_requires_both_markers() {
+        assert!(contains_managed_hooks(&format!(
+            "{MANAGED_BEGIN}\nvalue = true\n{MANAGED_END}\n"
+        )));
+        assert!(!contains_managed_hooks(MANAGED_BEGIN));
+        assert!(!contains_managed_hooks("model = \"gpt-5\""));
     }
 }

@@ -25,6 +25,19 @@ type CoreSettings = {
 };
 
 type CodexStatus = { phase: "idle" | "running" | "completed" | "failed" | "stale" };
+type CodexCliStatus = { ready: boolean; desktopInstalled: boolean; connectable: boolean; source?: string; message: string };
+type CodexQuota = { available: boolean; remainingPercent?: number; message?: string; source?: string };
+type SmtcSession = {
+  appId: string;
+  title: string;
+  artist: string;
+  playbackStatus: string;
+  playing: boolean;
+  preferred: boolean;
+  whitelisted: boolean;
+  eligible: boolean;
+  readable: boolean;
+};
 type ViewId = "time" | "lyric" | "journal" | "tray";
 type VisualSide = "left" | "right";
 
@@ -78,6 +91,12 @@ const obsidianDailyNotesDir = element<HTMLInputElement>("obsidian-daily-notes-di
 const codexHookState = element<HTMLElement>("codex-hook-state");
 const installCodexHooks = element<HTMLButtonElement>("install-codex-hooks");
 const clearCodexStatus = element<HTMLButtonElement>("clear-codex-status");
+const scanSmtc = element<HTMLButtonElement>("scan-smtc");
+const smtcScanResult = element<HTMLElement>("smtc-scan-result");
+const codexQuotaState = element<HTMLElement>("codex-quota-state");
+const codexQuotaDetail = element<HTMLElement>("codex-quota-detail");
+const checkCodexQuota = element<HTMLButtonElement>("check-codex-quota");
+const openOnboarding = element<HTMLButtonElement>("open-onboarding");
 const navItems = Array.from(document.querySelectorAll<HTMLButtonElement>(".nav-item"));
 
 let iconOrder: ViewId[] = ["time", "lyric", "journal", "tray"];
@@ -404,6 +423,81 @@ async function refreshCodexStatus(): Promise<void> {
   renderCodexStatus(await invoke<CodexStatus>("get_codex_status"));
 }
 
+function renderCodexConnection(value: CodexCliStatus): void {
+  codexQuotaState.classList.remove("success", "warning");
+  if (value.ready) {
+    codexQuotaState.textContent = "可验证";
+    codexQuotaState.classList.add("warning");
+  } else if (value.connectable) {
+    codexQuotaState.textContent = "可连接";
+    codexQuotaState.classList.add("warning");
+  } else {
+    codexQuotaState.textContent = "未找到";
+  }
+  codexQuotaDetail.textContent = value.message + (value.source ? ` · ${value.source}` : "");
+}
+
+async function refreshCodexConnection(): Promise<void> {
+  renderCodexConnection(await invoke<CodexCliStatus>("get_codex_cli_status"));
+}
+
+function renderSmtcDiagnostics(sessions: SmtcSession[]): void {
+  smtcScanResult.replaceChildren();
+  if (!sessions.length) {
+    const empty = document.createElement("span");
+    empty.textContent = "未发现 SMTC 会话。请让播放器开始播放后重试；这通常表示播放器未向 Windows 发布媒体状态。";
+    smtcScanResult.append(empty);
+    return;
+  }
+  for (const session of sessions) {
+    const row = document.createElement("div");
+    row.className = `diagnostic-session${session.eligible ? " accepted" : ""}`;
+    const name = document.createElement("strong");
+    name.textContent = session.appId || "未知应用标识";
+    const metadata = document.createElement("small");
+    const track = [session.title, session.artist].filter(Boolean).join(" · ") || "未读取到歌曲信息";
+    metadata.textContent = `${track} · ${session.playbackStatus} · ${session.eligible ? "已允许" : "未允许"}`;
+    row.append(name, metadata);
+    if (!session.eligible && session.appId) {
+      const allow = document.createElement("button");
+      allow.type = "button";
+      allow.className = "btn btn-small";
+      allow.textContent = "加入白名单";
+      allow.addEventListener("click", async () => {
+        allow.disabled = true;
+        try {
+          const normalized = session.appId.toLowerCase();
+          const values = lines(smtcWhitelist.value);
+          if (!values.some((value) => normalized.includes(value.toLowerCase()))) values.push(session.appId);
+          smtcWhitelist.value = values.join("\n");
+          smtcWhitelistEnabled.checked = true;
+          await invoke("save_smtc_whitelist", { appIds: values });
+          await invoke("set_smtc_whitelist_enabled", { enabled: true });
+          await runSmtcScan();
+        } catch (error) {
+          showStatus(String(error), true, 4000);
+        } finally {
+          allow.disabled = false;
+        }
+      });
+      row.append(allow);
+    }
+    smtcScanResult.append(row);
+  }
+}
+
+async function runSmtcScan(): Promise<void> {
+  scanSmtc.disabled = true;
+  smtcScanResult.textContent = "正在读取 Windows SMTC 会话…";
+  try {
+    renderSmtcDiagnostics(await invoke<SmtcSession[]>("diagnose_smtc_sessions"));
+  } catch (error) {
+    smtcScanResult.textContent = `扫描失败：${String(error)}`;
+  } finally {
+    scanSmtc.disabled = false;
+  }
+}
+
 function playMenuIntro(): void {
   shell.classList.remove("menu-open");
   shell.classList.add("menu-resetting");
@@ -512,7 +606,7 @@ async function loadSettings(): Promise<void> {
     renderVisualOptions("left");
     renderVisualOptions("right");
     renderBorderEffects();
-    await refreshCodexStatus();
+    await Promise.all([refreshCodexStatus(), refreshCodexConnection()]);
   } catch (error) {
     console.error(error);
     showStatus("设置加载失败", true, 4000);
@@ -596,6 +690,37 @@ clearCodexStatus.addEventListener("click", async () => {
   try {
     renderCodexStatus(await invoke<CodexStatus>("clear_codex_status"));
     showStatus("Codex 状态已清除");
+  } catch (error) {
+    showStatus(String(error), true, 4000);
+  }
+});
+scanSmtc.addEventListener("click", () => void runSmtcScan());
+checkCodexQuota.addEventListener("click", async () => {
+  checkCodexQuota.disabled = true;
+  codexQuotaState.textContent = "连接中";
+  codexQuotaState.classList.add("warning");
+  codexQuotaDetail.textContent = "首次连接可能需要复用 Codex Desktop 的本地运行组件…";
+  try {
+    const value = await invoke<CodexQuota>("connect_codex_quota");
+    codexQuotaState.classList.remove("success", "warning");
+    if (value.available) {
+      codexQuotaState.textContent = "已连接";
+      codexQuotaState.classList.add("success");
+      codexQuotaDetail.textContent = `${value.source || "Codex CLI"}${value.remainingPercent != null ? ` · 剩余 ${Math.round(value.remainingPercent)}%` : ""}`;
+    } else {
+      codexQuotaState.textContent = "连接失败";
+      codexQuotaDetail.textContent = value.message || "Codex 未返回额度信息";
+    }
+  } catch (error) {
+    codexQuotaState.textContent = "连接失败";
+    codexQuotaDetail.textContent = String(error);
+  } finally {
+    checkCodexQuota.disabled = false;
+  }
+});
+openOnboarding.addEventListener("click", async () => {
+  try {
+    await invoke("open_onboarding_window");
   } catch (error) {
     showStatus(String(error), true, 4000);
   }

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Wisland 启动检查</title>
+  <style>html,body{margin:0;background:#0a0a0a;color-scheme:dark}</style>
+  <link rel="stylesheet" href="/src/onboarding.css" />
+</head>
+<body>
+  <header class="titlebar" data-tauri-drag-region>
+    <span data-tauri-drag-region>WISLAND <i>/</i> FIRST CHECK</span>
+    <button id="skip" type="button">稍后设置并进入</button>
+  </header>
+
+  <main>
+    <section class="intro">
+      <img src="/src/assets/wisland-icon.png" alt="" />
+      <div>
+        <p class="eyebrow">WELCOME TO WISLAND</p>
+        <h1>开始前，快速检查一次</h1>
+        <p>确认播放器、Codex 与本机环境已连接。缺少的项目可以现在补齐，也可以稍后在设置中重新检查。</p>
+      </div>
+    </section>
+
+    <section id="check-list" class="check-list" aria-live="polite"></section>
+
+    <footer>
+      <span id="summary">正在检测本机环境…</span>
+      <div>
+        <button id="refresh" class="secondary" type="button">重新检测</button>
+        <button id="enter" class="primary" type="button">进入 Wisland</button>
+      </div>
+    </footer>
+  </main>
+  <script type="module" src="/src/onboarding.ts"></script>
+</body>
+</html>

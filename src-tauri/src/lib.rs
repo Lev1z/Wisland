@@ -5,6 +5,7 @@ pub mod logger;
 mod lyrics;
 mod media;
 mod obsidian;
+mod onboarding;
 mod privacy;
 pub mod settings;
 mod window;
@@ -63,7 +64,10 @@ pub fn run() {
             settings::set_obsidian_preferences,
             agent_status::get_codex_status, agent_status::clear_codex_status,
             agent_status::install_codex_status_hooks,
-            codex_usage::get_codex_quota,
+            codex_usage::get_codex_quota, codex_usage::connect_codex_quota,
+            codex_usage::get_codex_cli_status,
+            onboarding::get_onboarding_status, onboarding::open_onboarding_window,
+            onboarding::complete_onboarding,
             obsidian::append_obsidian_note, obsidian::append_obsidian_entry,
             obsidian::get_obsidian_todos, obsidian::get_obsidian_entries,
             obsidian::set_obsidian_todo_completed, obsidian::delete_obsidian_entry,
@@ -72,6 +76,7 @@ pub fn run() {
             media::media_seek,
             media::media_volume_up, media::media_volume_down,
             media::media_get_volume, media::media_set_volume,
+            media::diagnose_smtc_sessions,
             settings::get_auto_start, settings::set_auto_start,
             settings::get_blacklist, settings::save_blacklist,
             settings::get_blacklist_enabled, settings::set_blacklist_enabled,
@@ -107,6 +112,7 @@ pub fn run() {
             // 从文件加载设置
             let settings = settings::load_settings_from_file();
             logger::set_level(&settings.log_level);
+            let onboarding_completed = Arc::new(AtomicBool::new(settings.onboarding_completed));
             let lyric_mode = Arc::new(Mutex::new(settings.lyric_mode.clone()));
             let lyric_offset_enabled = Arc::new(AtomicBool::new(settings.lyric_offset_enabled));
             // 按播放器存储的歌词补偿，启动时规范化键值
@@ -153,6 +159,7 @@ pub fn run() {
             media::start_audio_peak_monitor(window.clone(), is_music.clone());
 
             app.manage(IslandState {
+                onboarding_completed: onboarding_completed.clone(),
                 is_notifying: is_notifying.clone(),
                 is_expanded: is_expanded.clone(),
                 is_dragging: is_dragging.clone(),
@@ -869,6 +876,13 @@ pub fn run() {
                 }
             });
 
+            if onboarding_completed.load(Ordering::Relaxed) {
+                let _ = window.show();
+            } else if let Err(error) = onboarding::open_onboarding(app.handle().clone()) {
+                logger::error("Onboarding", &error);
+                let _ = window.show();
+            }
+
             Ok(())
         })
         .run(tauri::generate_context!())
@@ -910,6 +924,7 @@ fn trigger_notification(
 }
 
 pub struct IslandState {
+    pub onboarding_completed: Arc<AtomicBool>,
     pub is_notifying: Arc<AtomicBool>,
     pub is_expanded: Arc<AtomicBool>,
     pub is_dragging: Arc<AtomicBool>,

@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { codexQuotaLabel, codexQuotaProgress, codexQuotaRing } from "../dom";
 
 type CodexQuota = {
@@ -24,7 +25,7 @@ function render(quota: CodexQuota): void {
   if (!quota.available || remaining === null) {
     codexQuotaRing.classList.add("quota-unknown");
     codexQuotaProgress.style.strokeDashoffset = String(CIRCUMFERENCE);
-    codexQuotaRing.title = "Codex 剩余额度未知；需要可调用的独立 Codex CLI";
+    codexQuotaRing.title = quota.message || "Codex 剩余额度未知；可在启动检查或设置中连接";
     codexQuotaRing.setAttribute("aria-label", codexQuotaRing.title);
     codexQuotaLabel.textContent = "--%";
     return;
@@ -60,4 +61,5 @@ async function refresh(): Promise<void> {
 export function initCodexQuota(): void {
   void refresh();
   window.setInterval(() => void refresh(), 120_000);
+  void listen("onboarding-complete", () => void refresh());
 }
