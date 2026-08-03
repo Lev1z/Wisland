@@ -187,6 +187,13 @@ export function initMinimizeDrag() {
 
   });
 
+  capsule.addEventListener("auxclick", (event: MouseEvent) => {
+    if (event.button !== 1 || isMinimized || capsule.classList.contains("music-expanded")) return;
+    event.preventDefault();
+    event.stopPropagation();
+    void invoke<boolean>("toggle_capsule_pin");
+  });
+
 
 
   // 绿条点击展开

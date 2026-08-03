@@ -49,5 +49,6 @@ async function refresh(): Promise<void> {
 
 export function initCodexStatus(): void {
   void refresh();
-  window.setInterval(() => void refresh(), 500);
+  // 状态文件不会以亚秒级变化；降低 IPC 频率可减少常驻内存和 CPU 压力。
+  window.setInterval(() => void refresh(), 2_000);
 }

@@ -40,16 +40,24 @@
   <div id="view-holder" hidden>
     <div id="time-wrapper" class="content-wrapper">
       <div id="home-date" aria-hidden="true">26/08/02 Sun.</div>
-      <div id="codex-quota-ring" class="quota-unknown" role="img" aria-label="Codex 剩余额度未知" title="Codex 剩余额度未知">
-        <svg viewBox="0 0 20 20" aria-hidden="true">
-          <circle class="quota-track" cx="10" cy="10" r="7.5"></circle>
-          <circle id="codex-quota-progress" cx="10" cy="10" r="7.5"></circle>
-        </svg>
+      <div id="home-main-row">
+        <div id="codex-quota-ring" class="quota-unknown" role="img" aria-label="Codex 剩余额度未知" title="Codex 剩余额度未知">
+          <svg viewBox="0 0 20 20" aria-hidden="true">
+            <circle class="quota-track" cx="10" cy="10" r="7.5"></circle>
+            <circle id="codex-quota-progress" cx="10" cy="10" r="7.5"></circle>
+          </svg>
+          <img id="codex-left-custom-visual" class="custom-slot-visual" alt="" hidden />
+        </div>
+        <div id="time-text">00:00:00</div>
+        <div id="codex-status-dot" class="status-idle" role="status" aria-label="Codex 空闲" title="Codex 空闲">
+          <img id="codex-right-custom-visual" class="custom-slot-visual" alt="" hidden />
+        </div>
       </div>
-      <div id="time-text">00:00:00</div>
-      <div id="codex-status-dot" class="status-idle" role="status" aria-label="Codex 空闲" title="Codex 空闲"></div>
-      <div id="codex-quota-label" aria-hidden="true">--%</div>
-      <div id="codex-status-label" aria-hidden="true">空闲</div>
+      <div id="home-detail-row" aria-hidden="true">
+        <div id="codex-quota-label">--%</div>
+        <span></span>
+        <div id="codex-status-label">空闲</div>
+      </div>
     </div>
 
     <div id="lyric-area" class="content-wrapper">
@@ -59,7 +67,9 @@
         <div class="vinyl-center"></div>
       </div>
       <div id="music-waveform" aria-label="音乐声波">
-        <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+        <span></span><span></span><span></span><span></span><span></span><span></span>
+        <span></span><span></span><span></span><span></span><span></span><span></span>
+        <span></span><span></span><span></span><span></span><span></span><span></span>
       </div>
       <div id="lyric-text-wrap">
         <div id="lyric-text"><span id="lyric-text-inner"></span></div>
@@ -133,8 +143,18 @@
         <div id="journal-kind" role="group" aria-label="记录类型">
           <button id="journal-kind-note" class="active" type="button">记录</button>
           <button id="journal-kind-todo" type="button">待办</button>
+          <button id="journal-kind-browse" type="button">查看</button>
         </div>
-        <textarea id="journal-input" maxlength="500" rows="2" placeholder="写入今天的 Obsidian…" aria-label="日记或待办内容"></textarea>
+        <div id="journal-content">
+          <textarea id="journal-input" maxlength="500" rows="2" placeholder="写入今天的 Obsidian…" aria-label="日记或待办内容"></textarea>
+          <div id="journal-browser" hidden>
+            <div id="journal-browser-tabs" role="tablist" aria-label="查看内容">
+              <button id="journal-browser-notes" class="active" type="button">记录</button>
+              <button id="journal-browser-todos" type="button">待办</button>
+            </div>
+            <div id="journal-entry-list" role="list"></div>
+          </div>
+        </div>
         <div id="journal-actions">
           <button id="journal-save" type="submit" title="保存" aria-label="保存">✓</button>
           <button id="journal-cancel" type="button" title="取消" aria-label="取消">×</button>

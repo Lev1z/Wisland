@@ -4,9 +4,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
+use crate::logger;
 use serde::{Deserialize, Serialize};
 use tauri::Emitter;
-use crate::logger;
 
 const TAG: &str = "CC";
 const DEFAULT_PORT: u16 = 2221;
@@ -41,7 +41,10 @@ pub fn start_server(
     for stream in listener.incoming() {
         let mut stream = match stream {
             Ok(s) => {
-                let peer = s.peer_addr().map(|a| a.to_string()).unwrap_or("unknown".into());
+                let peer = s
+                    .peer_addr()
+                    .map(|a| a.to_string())
+                    .unwrap_or("unknown".into());
                 logger::info(TAG, &format!("incoming connection from {}", peer));
                 s
             }
@@ -79,15 +82,28 @@ pub fn start_server(
         }
 
         // 从配置中动态匹配路径
-        let matched = routes.lock().unwrap().iter().find(|r| r.path == path).cloned();
+        let matched = routes
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|r| r.path == path)
+            .cloned();
 
         let (status, body, notice_tag) = if let Some(route) = &matched {
             let tag = render_tag(&route.tag, &query_values);
             logger::info(TAG, &format!("received: {} -> {}", request_target, tag));
-            ("200 OK", serde_json::json!({"ok": true, "message": tag}).to_string(), Some(tag))
+            (
+                "200 OK",
+                serde_json::json!({"ok": true, "message": tag}).to_string(),
+                Some(tag),
+            )
         } else {
             logger::info(TAG, &format!("unknown path: {}", request_target));
-            ("404 Not Found", serde_json::json!({"ok": false, "error": "unknown path"}).to_string(), None)
+            (
+                "404 Not Found",
+                serde_json::json!({"ok": false, "error": "unknown path"}).to_string(),
+                None,
+            )
         };
 
         let response = format!(

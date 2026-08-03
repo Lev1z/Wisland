@@ -20,8 +20,8 @@ pub(crate) const LYRIC_OFFSET_STEP_MS: i64 = 500;
 
 pub(crate) fn clamp_lyric_offset_ms(ms: i64) -> i64 {
     let clamped = ms.clamp(LYRIC_OFFSET_MIN_MS, LYRIC_OFFSET_MAX_MS);
-    let rounded = ((clamped as f64) / LYRIC_OFFSET_STEP_MS as f64).round() as i64
-        * LYRIC_OFFSET_STEP_MS;
+    let rounded =
+        ((clamped as f64) / LYRIC_OFFSET_STEP_MS as f64).round() as i64 * LYRIC_OFFSET_STEP_MS;
     rounded.clamp(LYRIC_OFFSET_MIN_MS, LYRIC_OFFSET_MAX_MS)
 }
 
@@ -38,6 +38,61 @@ pub(crate) fn normalize_lyric_offsets(map: &HashMap<String, i64>) -> HashMap<Str
         .collect()
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CustomAsset {
+    pub id: String,
+    pub name: String,
+    pub data_url: String,
+}
+
+fn normalize_custom_assets(values: &[CustomAsset]) -> Vec<CustomAsset> {
+    let mut normalized = Vec::new();
+    for value in values.iter().take(24) {
+        let id = value.id.trim();
+        let data_url = value.data_url.trim();
+        if id.is_empty()
+            || !data_url.starts_with("data:image/")
+            || data_url.len() > 6 * 1024 * 1024
+            || normalized.iter().any(|item: &CustomAsset| item.id == id)
+        {
+            continue;
+        }
+        normalized.push(CustomAsset {
+            id: id.chars().take(80).collect(),
+            name: value.name.trim().chars().take(100).collect(),
+            data_url: data_url.to_string(),
+        });
+    }
+    normalized
+}
+
+fn migrate_embedded_asset(
+    source: &mut String,
+    assets: &mut Vec<CustomAsset>,
+    id: &str,
+    name: &str,
+) {
+    if source.starts_with("data:image/") {
+        assets.push(CustomAsset {
+            id: id.to_string(),
+            name: name.to_string(),
+            data_url: source.clone(),
+        });
+        *source = format!("asset:{id}");
+    } else if source.starts_with("preset:") {
+        source.clear();
+    }
+}
+
+fn source_exists(source: &str, assets: &[CustomAsset]) -> bool {
+    if matches!(source, "builtin:cat-wave" | "builtin:dog-wave") {
+        return true;
+    }
+    source
+        .strip_prefix("asset:")
+        .is_some_and(|id| assets.iter().any(|asset| asset.id == id))
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct SettingsData {
     #[serde(default = "default_lyric_mode")]
@@ -52,6 +107,26 @@ pub(crate) struct SettingsData {
     pub capsule_opacity: f64,
     #[serde(default = "default_capsule_scale")]
     pub capsule_scale: f64,
+    #[serde(default = "default_icon_bar_style")]
+    pub icon_bar_style: String,
+    #[serde(default = "default_icon_bar_order")]
+    pub icon_bar_order: Vec<String>,
+    #[serde(default = "default_border_effect")]
+    pub border_effect: String,
+    #[serde(default)]
+    pub border_custom_source: String,
+    #[serde(default = "default_left_visual_mode")]
+    pub left_visual_mode: String,
+    #[serde(default)]
+    pub left_visual_source: String,
+    #[serde(default = "default_right_visual_mode")]
+    pub right_visual_mode: String,
+    #[serde(default)]
+    pub right_visual_source: String,
+    #[serde(default)]
+    pub visual_assets: Vec<CustomAsset>,
+    #[serde(default)]
+    pub border_assets: Vec<CustomAsset>,
     #[serde(default)]
     pub rainbow_border: bool,
     #[serde(default)]
@@ -75,7 +150,7 @@ pub(crate) struct SettingsData {
 }
 
 fn default_lyric_mode() -> String {
-    "off".to_string()
+    "lyric".to_string()
 }
 
 fn default_lyric_offset_enabled() -> bool {
@@ -92,6 +167,83 @@ fn default_capsule_opacity() -> f64 {
 
 fn default_capsule_scale() -> f64 {
     1.0
+}
+
+fn normalize_capsule_scale(value: f64) -> f64 {
+    [0.8, 1.0, 1.25, 1.5]
+        .into_iter()
+        .min_by(|left, right| {
+            (left - value)
+                .abs()
+                .partial_cmp(&(right - value).abs())
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .unwrap_or(1.0)
+}
+
+fn default_icon_bar_style() -> String {
+    "option-wheel".to_string()
+}
+
+fn normalize_icon_bar_style(value: &str) -> String {
+    match value.trim() {
+        "classic" => "classic".to_string(),
+        "option-wheel" => "option-wheel".to_string(),
+        // The old Default value is migrated to the new default.
+        "default" => "option-wheel".to_string(),
+        _ => default_icon_bar_style(),
+    }
+}
+
+fn default_icon_bar_order() -> Vec<String> {
+    ["time", "lyric", "journal", "tray"]
+        .into_iter()
+        .map(str::to_string)
+        .collect()
+}
+
+fn normalize_icon_bar_order(values: &[String]) -> Vec<String> {
+    let defaults = default_icon_bar_order();
+    let mut normalized = Vec::with_capacity(defaults.len());
+    for value in values.iter().chain(defaults.iter()) {
+        if defaults.contains(value) && !normalized.contains(value) {
+            normalized.push(value.clone());
+        }
+    }
+    normalized
+}
+
+fn default_border_effect() -> String {
+    "off".to_string()
+}
+
+fn normalize_border_effect(value: &str) -> String {
+    match value.trim() {
+        "aurora" | "mono" | "custom" => value.trim().to_string(),
+        _ => default_border_effect(),
+    }
+}
+
+fn default_left_visual_mode() -> String {
+    "codex".to_string()
+}
+
+fn normalize_left_visual_mode(value: &str) -> String {
+    match value.trim() {
+        "custom" => "custom".to_string(),
+        _ => default_left_visual_mode(),
+    }
+}
+
+fn default_right_visual_mode() -> String {
+    "status".to_string()
+}
+
+fn normalize_right_visual_mode(value: &str) -> String {
+    match value.trim() {
+        "custom" => "custom".to_string(),
+        _ => default_right_visual_mode(),
+    }
 }
 
 fn default_blacklist_enabled() -> bool {
@@ -171,6 +323,16 @@ impl Default for SettingsData {
             indicator_color: default_indicator_color(),
             capsule_opacity: default_capsule_opacity(),
             capsule_scale: default_capsule_scale(),
+            icon_bar_style: default_icon_bar_style(),
+            icon_bar_order: default_icon_bar_order(),
+            border_effect: default_border_effect(),
+            border_custom_source: String::new(),
+            left_visual_mode: default_left_visual_mode(),
+            left_visual_source: String::new(),
+            right_visual_mode: default_right_visual_mode(),
+            right_visual_source: String::new(),
+            visual_assets: Vec::new(),
+            border_assets: Vec::new(),
             rainbow_border: false,
             auto_start: false,
             blacklist_processes: default_blacklist_processes(),
@@ -199,7 +361,59 @@ pub(crate) fn load_settings_from_file() -> SettingsData {
         if let Ok(mut data) = serde_json::from_str::<SettingsData>(&content) {
             data.lyric_offsets_by_player = normalize_lyric_offsets(&data.lyric_offsets_by_player);
             data.capsule_opacity = data.capsule_opacity.clamp(0.6, 1.0);
-            data.capsule_scale = data.capsule_scale.clamp(0.9, 1.15);
+            data.capsule_scale = normalize_capsule_scale(data.capsule_scale);
+            data.icon_bar_style = normalize_icon_bar_style(&data.icon_bar_style);
+            data.icon_bar_order = normalize_icon_bar_order(&data.icon_bar_order);
+            data.border_effect = if data.border_effect == "off" && data.rainbow_border {
+                "aurora".to_string()
+            } else {
+                normalize_border_effect(&data.border_effect)
+            };
+            data.left_visual_mode = normalize_left_visual_mode(&data.left_visual_mode);
+            data.right_visual_mode = normalize_right_visual_mode(&data.right_visual_mode);
+            data.visual_assets = normalize_custom_assets(&data.visual_assets);
+            data.border_assets = normalize_custom_assets(&data.border_assets);
+            migrate_embedded_asset(
+                &mut data.left_visual_source,
+                &mut data.visual_assets,
+                "legacy-left",
+                "旧左侧素材",
+            );
+            migrate_embedded_asset(
+                &mut data.right_visual_source,
+                &mut data.visual_assets,
+                "legacy-right",
+                "旧右侧素材",
+            );
+            migrate_embedded_asset(
+                &mut data.border_custom_source,
+                &mut data.border_assets,
+                "legacy-border",
+                "旧边框素材",
+            );
+            data.visual_assets = normalize_custom_assets(&data.visual_assets);
+            data.border_assets = normalize_custom_assets(&data.border_assets);
+            if data.left_visual_mode == "custom"
+                && !source_exists(&data.left_visual_source, &data.visual_assets)
+            {
+                data.left_visual_mode = default_left_visual_mode();
+                data.left_visual_source.clear();
+            }
+            if data.right_visual_mode == "custom"
+                && !source_exists(&data.right_visual_source, &data.visual_assets)
+            {
+                data.right_visual_mode = default_right_visual_mode();
+                data.right_visual_source.clear();
+            }
+            if data.border_effect == "custom"
+                && !source_exists(&data.border_custom_source, &data.border_assets)
+            {
+                data.border_effect = default_border_effect();
+                data.border_custom_source.clear();
+            }
+            // Music information and lyrics are now always available.
+            data.lyric_mode = default_lyric_mode();
+            data.lyric_offset_enabled = true;
             if data.indicator_color.eq_ignore_ascii_case("#2edb67") {
                 data.indicator_color = default_indicator_color();
             }
@@ -225,6 +439,16 @@ pub(crate) fn build_settings_data(state: &IslandState) -> SettingsData {
         indicator_color: state.indicator_color.lock().unwrap().clone(),
         capsule_opacity: *state.capsule_opacity.lock().unwrap(),
         capsule_scale: *state.capsule_scale.lock().unwrap(),
+        icon_bar_style: state.icon_bar_style.lock().unwrap().clone(),
+        icon_bar_order: state.icon_bar_order.lock().unwrap().clone(),
+        border_effect: state.border_effect.lock().unwrap().clone(),
+        border_custom_source: state.border_custom_source.lock().unwrap().clone(),
+        left_visual_mode: state.left_visual_mode.lock().unwrap().clone(),
+        left_visual_source: state.left_visual_source.lock().unwrap().clone(),
+        right_visual_mode: state.right_visual_mode.lock().unwrap().clone(),
+        right_visual_source: state.right_visual_source.lock().unwrap().clone(),
+        visual_assets: state.visual_assets.lock().unwrap().clone(),
+        border_assets: state.border_assets.lock().unwrap().clone(),
         rainbow_border: state.rainbow_border.load(Ordering::Relaxed),
         auto_start: state.auto_start.load(Ordering::Relaxed),
         blacklist_processes: state.blacklist_processes.lock().unwrap().clone(),
@@ -243,10 +467,11 @@ pub fn open_settings(app: tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("settings") {
         let _ = window.show();
         let _ = window.set_focus();
+        let _ = window.emit("settings-menu-open", ());
         return;
     }
 
-    let _ = tauri::WebviewWindowBuilder::new(
+    let builder = tauri::WebviewWindowBuilder::new(
         &app,
         "settings",
         tauri::WebviewUrl::App("settings.html".into()),
@@ -254,9 +479,26 @@ pub fn open_settings(app: tauri::AppHandle) {
     .title("Wisland 设置")
     .inner_size(960.0, 620.0)
     .min_inner_size(760.0, 500.0)
+    .background_color(tauri::window::Color(13, 13, 13, 255))
+    .decorations(false)
     .resizable(true)
-    .center()
-    .build();
+    .center();
+
+    let result = tauri::image::Image::from_bytes(include_bytes!("../icons/icon.png"))
+        .and_then(|icon| builder.icon(icon))
+        .and_then(|builder| builder.build());
+    if let Err(error) = result {
+        crate::logger::error("Settings", &format!("无法打开设置窗口：{error}"));
+    }
+}
+
+#[tauri::command]
+pub fn open_github_profile() -> Result<(), String> {
+    std::process::Command::new("explorer.exe")
+        .arg("https://github.com/Lev1z")
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("无法打开 GitHub 主页：{error}"))
 }
 
 #[tauri::command]
@@ -267,6 +509,16 @@ pub fn get_settings(state: tauri::State<'_, IslandState>) -> serde_json::Value {
         "indicator_color": state.indicator_color.lock().unwrap().clone(),
         "capsule_opacity": *state.capsule_opacity.lock().unwrap(),
         "capsule_scale": *state.capsule_scale.lock().unwrap(),
+        "icon_bar_style": state.icon_bar_style.lock().unwrap().clone(),
+        "icon_bar_order": state.icon_bar_order.lock().unwrap().clone(),
+        "border_effect": state.border_effect.lock().unwrap().clone(),
+        "border_custom_source": state.border_custom_source.lock().unwrap().clone(),
+        "left_visual_mode": state.left_visual_mode.lock().unwrap().clone(),
+        "left_visual_source": state.left_visual_source.lock().unwrap().clone(),
+        "right_visual_mode": state.right_visual_mode.lock().unwrap().clone(),
+        "right_visual_source": state.right_visual_source.lock().unwrap().clone(),
+        "visual_assets": state.visual_assets.lock().unwrap().clone(),
+        "border_assets": state.border_assets.lock().unwrap().clone(),
         "rainbow_border": state.rainbow_border.load(Ordering::Relaxed),
         "obsidian_vault_path": state.obsidian_vault_path.lock().unwrap().clone(),
         "obsidian_daily_notes_dir": state.obsidian_daily_notes_dir.lock().unwrap().clone(),
@@ -279,19 +531,79 @@ pub fn set_appearance_preferences(
     state: tauri::State<'_, IslandState>,
     opacity: f64,
     scale: f64,
-    rainbow_border: bool,
+    icon_bar_style: String,
+    icon_bar_order: Vec<String>,
+    border_effect: String,
+    border_custom_source: String,
+    left_visual_mode: String,
+    left_visual_source: String,
+    right_visual_mode: String,
+    right_visual_source: String,
+    visual_assets: Vec<CustomAsset>,
+    border_assets: Vec<CustomAsset>,
 ) -> Result<(), String> {
     let opacity = opacity.clamp(0.6, 1.0);
-    let scale = scale.clamp(0.9, 1.15);
+    let scale = normalize_capsule_scale(scale);
+    let icon_bar_style = normalize_icon_bar_style(&icon_bar_style);
+    let icon_bar_order = normalize_icon_bar_order(&icon_bar_order);
+    let mut border_effect = normalize_border_effect(&border_effect);
+    let mut left_visual_mode = normalize_left_visual_mode(&left_visual_mode);
+    let mut right_visual_mode = normalize_right_visual_mode(&right_visual_mode);
+    let visual_assets = normalize_custom_assets(&visual_assets);
+    let border_assets = normalize_custom_assets(&border_assets);
+    let left_visual_source = if source_exists(&left_visual_source, &visual_assets) {
+        left_visual_source
+    } else {
+        left_visual_mode = default_left_visual_mode();
+        String::new()
+    };
+    let right_visual_source = if source_exists(&right_visual_source, &visual_assets) {
+        right_visual_source
+    } else {
+        right_visual_mode = default_right_visual_mode();
+        String::new()
+    };
+    let border_custom_source = if source_exists(&border_custom_source, &border_assets) {
+        border_custom_source
+    } else {
+        if border_effect == "custom" {
+            border_effect = default_border_effect();
+        }
+        String::new()
+    };
     *state.capsule_opacity.lock().unwrap() = opacity;
     *state.capsule_scale.lock().unwrap() = scale;
-    state.rainbow_border.store(rainbow_border, Ordering::Relaxed);
+    *state.icon_bar_style.lock().unwrap() = icon_bar_style.clone();
+    *state.icon_bar_order.lock().unwrap() = icon_bar_order.clone();
+    *state.border_effect.lock().unwrap() = border_effect.clone();
+    *state.border_custom_source.lock().unwrap() = border_custom_source.clone();
+    *state.left_visual_mode.lock().unwrap() = left_visual_mode.clone();
+    *state.left_visual_source.lock().unwrap() = left_visual_source.clone();
+    *state.right_visual_mode.lock().unwrap() = right_visual_mode.clone();
+    *state.right_visual_source.lock().unwrap() = right_visual_source.clone();
+    *state.visual_assets.lock().unwrap() = visual_assets.clone();
+    *state.border_assets.lock().unwrap() = border_assets.clone();
+    state
+        .rainbow_border
+        .store(border_effect != "off", Ordering::Relaxed);
     if let Some(window) = app.get_webview_window("main") {
-        let _ = window.emit("appearance-changed", serde_json::json!({
-            "opacity": opacity,
-            "scale": scale,
-            "rainbowBorder": rainbow_border,
-        }));
+        let _ = window.emit(
+            "appearance-changed",
+            serde_json::json!({
+                "opacity": opacity,
+                "scale": scale,
+                "iconBarStyle": icon_bar_style,
+                "iconBarOrder": icon_bar_order,
+                "borderEffect": border_effect,
+                "borderCustomSource": border_custom_source,
+                "leftVisualMode": left_visual_mode,
+                "leftVisualSource": left_visual_source,
+                "rightVisualMode": right_visual_mode,
+                "rightVisualSource": right_visual_source,
+                "visualAssets": visual_assets,
+                "borderAssets": border_assets,
+            }),
+        );
     }
     save_settings_to_file(&build_settings_data(&state))
 }
@@ -323,27 +635,90 @@ pub fn set_core_preferences(
     lyric_mode: String,
     lyric_offset_enabled: bool,
 ) -> Result<(), String> {
+    let _ = (lyric_mode, lyric_offset_enabled);
     let indicator_color = if indicator_color.starts_with('#') && indicator_color.len() == 7 {
         indicator_color
     } else {
         default_indicator_color()
     };
-    let lyric_mode = match lyric_mode.as_str() {
-        "off" | "info" | "lyric" => lyric_mode,
-        _ => default_lyric_mode(),
-    };
+    let lyric_mode = default_lyric_mode();
 
     *state.indicator_color.lock().unwrap() = indicator_color.clone();
     *state.lyric_mode.lock().unwrap() = lyric_mode.clone();
-    state
-        .lyric_offset_enabled
-        .store(lyric_offset_enabled, Ordering::Relaxed);
+    state.lyric_offset_enabled.store(true, Ordering::Relaxed);
 
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.emit("indicator-color-changed", &indicator_color);
         let _ = window.emit("lyric-mode-changed", &lyric_mode);
     }
 
+    save_settings_to_file(&build_settings_data(&state))
+}
+
+#[tauri::command]
+pub fn get_lyric_offset_players(state: tauri::State<'_, IslandState>) -> serde_json::Value {
+    let mut players: Vec<_> = state
+        .lyric_offsets_by_player
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(app_id, ms)| serde_json::json!({ "app_id": app_id, "ms": ms }))
+        .collect();
+    players.sort_by(|left, right| {
+        left["app_id"]
+            .as_str()
+            .unwrap_or_default()
+            .cmp(right["app_id"].as_str().unwrap_or_default())
+    });
+    serde_json::json!({
+        "enabled": state.lyric_offset_enabled.load(Ordering::Relaxed),
+        "active_app_id": state.active_player_app_id.lock().unwrap().clone(),
+        "min_ms": LYRIC_OFFSET_MIN_MS,
+        "max_ms": LYRIC_OFFSET_MAX_MS,
+        "step_ms": LYRIC_OFFSET_STEP_MS,
+        "players": players,
+    })
+}
+
+#[tauri::command]
+pub fn set_lyric_offset_enabled(
+    state: tauri::State<'_, IslandState>,
+    enabled: bool,
+) -> Result<(), String> {
+    state.lyric_offset_enabled.store(enabled, Ordering::Relaxed);
+    save_settings_to_file(&build_settings_data(&state))
+}
+
+#[tauri::command]
+pub fn set_lyric_offset_for_player(
+    state: tauri::State<'_, IslandState>,
+    app_id: String,
+    ms: i64,
+) -> Result<i64, String> {
+    let app_id = normalize_app_id(&app_id);
+    if app_id.is_empty() {
+        return Err("播放器标识不能为空".into());
+    }
+    let ms = clamp_lyric_offset_ms(ms);
+    state
+        .lyric_offsets_by_player
+        .lock()
+        .unwrap()
+        .insert(app_id, ms);
+    save_settings_to_file(&build_settings_data(&state))?;
+    Ok(ms)
+}
+
+#[tauri::command]
+pub fn delete_lyric_offset_player(
+    state: tauri::State<'_, IslandState>,
+    app_id: String,
+) -> Result<(), String> {
+    state
+        .lyric_offsets_by_player
+        .lock()
+        .unwrap()
+        .remove(&normalize_app_id(&app_id));
     save_settings_to_file(&build_settings_data(&state))
 }
 
@@ -365,10 +740,7 @@ pub fn set_smtc_whitelist_enabled(
     state
         .smtc_whitelist_enabled
         .store(enabled, Ordering::Relaxed);
-    crate::media::update_smtc_whitelist(
-        enabled,
-        state.smtc_app_whitelist.lock().unwrap().clone(),
-    );
+    crate::media::update_smtc_whitelist(enabled, state.smtc_app_whitelist.lock().unwrap().clone());
     save_settings_to_file(&build_settings_data(&state))
 }
 
@@ -432,10 +804,7 @@ fn apply_auto_start(enabled: bool) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn set_auto_start(
-    state: tauri::State<'_, IslandState>,
-    enabled: bool,
-) -> Result<(), String> {
+pub fn set_auto_start(state: tauri::State<'_, IslandState>, enabled: bool) -> Result<(), String> {
     apply_auto_start(enabled)?;
     state.auto_start.store(enabled, Ordering::Relaxed);
     save_settings_to_file(&build_settings_data(&state))
@@ -472,4 +841,57 @@ pub fn save_blacklist(
         .collect();
     *state.blacklist_processes.lock().unwrap() = normalized;
     save_settings_to_file(&build_settings_data(&state))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        normalize_border_effect, normalize_custom_assets, normalize_icon_bar_order,
+        normalize_icon_bar_style, source_exists, CustomAsset, SettingsData,
+    };
+
+    #[test]
+    fn icon_bar_style_defaults_and_rejects_unknown_values() {
+        assert_eq!(SettingsData::default().icon_bar_style, "option-wheel");
+        assert_eq!(normalize_icon_bar_style("classic"), "classic");
+        assert_eq!(normalize_icon_bar_style("option-wheel"), "option-wheel");
+        assert_eq!(normalize_icon_bar_style("default"), "option-wheel");
+        assert_eq!(normalize_icon_bar_style("unexpected"), "option-wheel");
+    }
+
+    #[test]
+    fn icon_order_is_unique_and_complete() {
+        let input = vec!["tray".into(), "time".into(), "tray".into()];
+        assert_eq!(
+            normalize_icon_bar_order(&input),
+            vec!["tray", "time", "lyric", "journal"]
+        );
+    }
+
+    #[test]
+    fn custom_assets_are_deduplicated_and_invalid_data_is_dropped() {
+        let input = vec![
+            CustomAsset {
+                id: "one".into(),
+                name: "first".into(),
+                data_url: "data:image/gif;base64,AA".into(),
+            },
+            CustomAsset {
+                id: "one".into(),
+                name: "duplicate".into(),
+                data_url: "data:image/png;base64,BB".into(),
+            },
+            CustomAsset {
+                id: "bad".into(),
+                name: "bad".into(),
+                data_url: "https://example.com/a.gif".into(),
+            },
+        ];
+        let normalized = normalize_custom_assets(&input);
+        assert_eq!(normalized.len(), 1);
+        assert_eq!(normalized[0].name, "first");
+        assert_eq!(normalize_border_effect("klein"), "off");
+        assert!(source_exists("builtin:cat-wave", &[]));
+        assert!(source_exists("builtin:dog-wave", &[]));
+    }
 }

@@ -127,7 +127,9 @@ export function initMusicControls() {
     setCurrentArtistName(event.payload.artist);
     console.log(`[SMTC] genre='${event.payload.genre ?? ""}' title='${event.payload.title}' artist='${event.payload.artist}'`);
     lyricTextInner.textContent = "♪";
-    lyricMeta.textContent = `${event.payload.artist} - ${event.payload.title}`;
+    lyricMeta.textContent = event.payload.artist
+      ? `${event.payload.title} · ${event.payload.artist}`
+      : event.payload.title;
     mpLyricText.textContent = "♪";
     resetMpLyricFlipState();
     lyricMeta.style.fontSize = "";

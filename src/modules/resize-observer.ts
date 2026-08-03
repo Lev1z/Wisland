@@ -1,17 +1,25 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { capsule } from "../dom";
 import { setLyricMode, skipResizeSync } from "../state";
 import { applyIndicatorColor } from "./minimize-drag";
 
 let lastHeight = 0;
+let syncFrame = 0;
 
-function syncHeight(): void {
+function syncHeightNow(): void {
   if (skipResizeSync) return;
   const height = document.documentElement.offsetHeight;
   if (height <= 0 || height === lastHeight) return;
   lastHeight = height;
   void invoke("sync_window_height", { height });
+}
+
+function syncHeight(): void {
+  if (syncFrame) cancelAnimationFrame(syncFrame);
+  syncFrame = requestAnimationFrame(() => {
+    syncFrame = 0;
+    syncHeightNow();
+  });
 }
 
 export function initResizeObserver(): void {
@@ -27,6 +35,5 @@ export function initResizeObserver(): void {
   void listen<string>("indicator-color-changed", (event) => applyIndicatorColor(event.payload));
   void listen<string>("lyric-mode-changed", (event) => setLyricMode(event.payload));
   void listen("request-size-sync", syncHeight);
-  capsule.addEventListener("transitionend", syncHeight);
   syncHeight();
 }

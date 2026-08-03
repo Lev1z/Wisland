@@ -2,7 +2,7 @@ use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU8, Ordering};
-use std::sync::mpsc::{self, Sender};
+use std::sync::mpsc::{self, SyncSender};
 use std::sync::OnceLock;
 use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -15,8 +15,8 @@ static LOG_LEVEL: AtomicU8 = AtomicU8::new(1);
 fn level_to_u8(level: &str) -> u8 {
     match level {
         "DEBUG" => 0,
-        "INFO"  => 1,
-        "WARN"  => 2,
+        "INFO" => 1,
+        "WARN" => 2,
         "ERROR" => 3,
         _ => 1,
     }
@@ -43,10 +43,12 @@ enum LogMsg {
     Line(String),
 }
 
-fn get_sender() -> &'static Sender<LogMsg> {
-    static SENDER: OnceLock<Sender<LogMsg>> = OnceLock::new();
+fn get_sender() -> &'static SyncSender<LogMsg> {
+    static SENDER: OnceLock<SyncSender<LogMsg>> = OnceLock::new();
     SENDER.get_or_init(|| {
-        let (tx, rx) = mpsc::channel::<LogMsg>();
+        // 日志永远不能反过来拖垮常驻进程。磁盘暂时变慢时最多保留
+        // 256 条待写记录，后续高频重复日志直接丢弃，避免无界队列增内存。
+        let (tx, rx) = mpsc::sync_channel::<LogMsg>(256);
 
         let log_dir: PathBuf = dirs::config_dir()
             .unwrap_or_else(|| PathBuf::from("."))
@@ -94,7 +96,7 @@ fn write_log(tag: &str, level: &str, message: &str) {
         .unwrap_or_default()
         .as_secs();
     let line = format!("[{}][{}][{}] {}", tag, level, now, message);
-    let _ = get_sender().send(LogMsg::Line(line));
+    let _ = get_sender().try_send(LogMsg::Line(line));
 }
 
 pub fn debug(tag: &str, message: &str) {
@@ -139,9 +141,7 @@ pub fn open_log_dir() {
     info("Logger", "open_log_dir called");
     if let Some(path) = log_file_path() {
         if let Some(dir) = path.parent() {
-            let _ = std::process::Command::new("explorer")
-                .arg(dir)
-                .spawn();
+            let _ = std::process::Command::new("explorer").arg(dir).spawn();
         }
     }
 }

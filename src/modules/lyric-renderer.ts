@@ -483,14 +483,14 @@ export function initLyricRenderer() {
 
     if (lyricMode === "info" || text === null) {
       resetIslandLyricScroll();
-      renderLyricPlainText(lyricTextInner, text === null && lyricMode !== "info" ? "♪" : "");
-      lyricMeta.textContent = title;
-      lyricMeta.style.fontSize = "13px";
-      lyricMeta.style.color = "rgba(255,255,255,0.85)";
+      renderLyricPlainText(lyricTextInner, text?.trim() || "暂无歌词");
+      lyricMeta.textContent = artist ? `${title} · ${artist}` : title;
+      lyricMeta.style.fontSize = "";
+      lyricMeta.style.color = "";
     } else {
       lyricMeta.style.fontSize = "";
       lyricMeta.style.color = "";
-      lyricMeta.textContent = `${artist} - ${title}`;
+      lyricMeta.textContent = artist ? `${title} · ${artist}` : title;
       if (event.payload.line_start_ms !== undefined && event.payload.next_line_time_ms !== undefined) {
         if (lyricScrollLineStartMs !== event.payload.line_start_ms) {
           lyricTextInner.style.transform = "";

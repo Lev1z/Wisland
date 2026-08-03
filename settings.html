@@ -4,30 +4,45 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Wisland 设置</title>
+  <style>html,body{margin:0;background:#0d0d0d;color-scheme:dark}</style>
   <link rel="stylesheet" href="/src/settings.css" />
 </head>
 <body>
-  <main class="settings-shell">
-    <aside class="sidebar">
+  <header id="window-titlebar" class="window-titlebar">
+    <span class="window-title">WISLAND <i>/</i> SETTINGS</span>
+    <div class="window-controls">
+      <button id="window-minimize" type="button" aria-label="最小化">−</button>
+      <button id="window-maximize" type="button" aria-label="最大化">□</button>
+      <button id="window-close" type="button" aria-label="关闭">×</button>
+    </div>
+  </header>
+
+  <main id="settings-shell" class="settings-shell settings-staggered-menu">
+    <div class="menu-prelayers" aria-hidden="true">
+      <span class="menu-prelayer menu-prelayer-back"></span>
+      <span class="menu-prelayer menu-prelayer-front"></span>
+    </div>
+    <aside class="sidebar" aria-label="Wisland 设置菜单">
       <div class="brand">
-        <div class="brand-mark">W</div>
-        <div><h1>Wisland</h1><p>轻量桌面状态中心</p></div>
+        <img class="brand-mark" src="/src/assets/wisland-icon.png" alt="" />
+        <h1>Wisland</h1>
       </div>
       <nav aria-label="设置分类">
-        <button class="nav-item active" data-page="general">常规</button>
-        <button class="nav-item" data-page="music">音乐</button>
-        <button class="nav-item" data-page="codex">Codex</button>
-        <button class="nav-item" data-page="obsidian">Obsidian</button>
-        <button class="nav-item" data-page="behavior">行为</button>
-        <button class="nav-item" data-page="about">关于</button>
+        <button class="nav-item active" data-page="general"><span class="nav-index">01</span><span class="nav-label">常规</span></button>
+        <button class="nav-item" data-page="music"><span class="nav-index">02</span><span class="nav-label">音乐</span></button>
+        <button class="nav-item" data-page="codex"><span class="nav-index">03</span><span class="nav-label">Codex</span></button>
+        <button class="nav-item" data-page="obsidian"><span class="nav-index">04</span><span class="nav-label">Obsidian</span></button>
+        <button class="nav-item" data-page="custom"><span class="nav-index">05</span><span class="nav-label">自定义</span></button>
+        <button class="nav-item" data-page="behavior"><span class="nav-index">06</span><span class="nav-label">行为</span></button>
+        <button class="nav-item" data-page="about"><span class="nav-index">07</span><span class="nav-label">关于</span></button>
       </nav>
-      <div class="sidebar-foot">Wisland 0.1.0</div>
+      <div class="sidebar-foot"><span>PERSONAL DESKTOP LAYER</span><b>0.1.2</b></div>
     </aside>
 
     <section class="content">
       <header class="content-header">
         <div><h2 id="page-title">常规</h2><p id="page-description">只保留日常常驻真正需要的选项。</p></div>
-        <span id="save-status" role="status"></span>
+        <span id="save-status" role="status" aria-live="polite"></span>
       </header>
 
       <div class="content-body">
@@ -36,54 +51,67 @@
             <h3>启动与外观</h3>
             <label class="setting-row">
               <span><strong>开机自启</strong><small>登录 Windows 后自动启动 Wisland。</small></span>
-              <input id="auto-start" type="checkbox" class="toggle" />
+              <input id="auto-start" type="checkbox" class="toggle autosave" />
             </label>
             <label class="setting-row">
               <span><strong>收起指示器颜色</strong><small>胶囊最小化后的小横条颜色。</small></span>
-              <input id="indicator-color" type="color" value="#ffffff" />
+              <input id="indicator-color" type="color" value="#ffffff" class="autosave" />
             </label>
             <label class="setting-row">
               <span><strong>不透明度</strong><small>只调整胶囊本体，不影响桌面其他区域。</small></span>
-              <span class="range-control"><input id="capsule-opacity" type="range" min="60" max="100" value="100" /><output id="capsule-opacity-value">100%</output></span>
+              <span class="range-control"><input id="capsule-opacity" type="range" min="60" max="100" value="100" class="autosave" /><output id="capsule-opacity-value">100%</output></span>
             </label>
             <label class="setting-row">
-              <span><strong>胶囊大小</strong><small>在 90% 到 115% 之间调整整体尺寸。</small></span>
-              <span class="range-control"><input id="capsule-scale" type="range" min="90" max="115" value="100" /><output id="capsule-scale-value">100%</output></span>
+              <span><strong>胶囊大小</strong><small>尺寸、字体和页面对齐会按同一倍率同步缩放。</small></span>
+              <select id="capsule-scale" class="autosave">
+                <option value="0.8">0.8×</option><option value="1" selected>1.0×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option>
+              </select>
             </label>
             <label class="setting-row">
-              <span><strong>动态炫彩边框</strong><small>使用很细的流动色边，避免喧宾夺主。</small></span>
-              <input id="rainbow-border" type="checkbox" class="toggle" />
+              <span><strong>左侧图标栏</strong><small>Choose the navigation style.</small></span>
+              <select id="icon-bar-style" class="autosave">
+                <option value="option-wheel" selected>Option Wheel</option><option value="classic">Classic</option>
+              </select>
             </label>
+          </div>
+          <div class="setting-group">
+            <h3>图标顺序</h3>
+            <p class="setting-hint standalone">拖动条目调整顺序。</p>
+            <div id="icon-order-list" class="order-list"></div>
           </div>
         </section>
 
         <section class="page" id="page-music">
           <div class="setting-group">
-            <h3>SMTC 音乐</h3>
+            <h3>歌曲信息与歌词</h3>
+            <div class="setting-row static-row">
+              <span><strong>始终可用</strong><small>检测到音乐后保留歌曲信息与歌词，不再提供关闭或仅信息模式。</small></span>
+              <span class="status-pill blue">ACTIVE</span>
+            </div>
+            <div class="setting-row static-row">
+              <span><strong>歌词时间补偿</strong><small>对不同播放器单独校准，范围为 ±3 秒。</small></span>
+              <span class="status-pill blue">PER PLAYER</span>
+            </div>
+            <div class="offset-panel">
+              <div class="offset-panel-head"><span>已检测播放器</span><span id="lyric-offset-status"></span></div>
+              <div id="lyric-offset-list" class="offset-list"></div>
+              <p id="lyric-offset-empty" class="setting-hint standalone">播放一次音乐后，播放器会自动出现在这里。</p>
+            </div>
+          </div>
+          <div class="setting-group">
+            <h3>SMTC 来源</h3>
             <label class="setting-row">
-              <span><strong>展示方式</strong><small>保留歌词能力，但默认可以完全关闭。</small></span>
-              <select id="lyric-mode">
-                <option value="off">关闭</option>
-                <option value="info">仅歌曲信息</option>
-                <option value="lyric">歌曲信息与歌词</option>
-              </select>
+              <span><strong>播放器白名单</strong><small>每行一个 SMTC 应用标识；关闭时不限制播放器。</small></span>
+              <input id="smtc-whitelist-enabled" type="checkbox" class="toggle autosave" />
             </label>
-            <label class="setting-row">
-              <span><strong>启用歌词时间补偿</strong><small>允许针对不同播放器保存歌词偏移。</small></span>
-              <input id="lyric-offset-enabled" type="checkbox" class="toggle" />
-            </label>
-            <label class="setting-row">
-              <span><strong>播放器白名单</strong><small>每行填写一个 SMTC 应用标识；留空表示不限制。</small></span>
-              <input id="smtc-whitelist-enabled" type="checkbox" class="toggle" />
-            </label>
-            <textarea id="smtc-whitelist" rows="6" placeholder="cloudmusic.exe&#10;qqmusic.exe"></textarea>
+            <textarea id="smtc-whitelist" class="autosave" rows="6" placeholder="cloudmusic.exe&#10;qqmusic.exe"></textarea>
           </div>
         </section>
 
         <section class="page" id="page-codex">
           <div class="setting-group">
             <h3>任务状态</h3>
-            <div class="setting-row">
+            <div class="setting-row static-row">
               <span><strong>Codex Hooks</strong><small>在任务开始与结束时写入本地状态，Wisland 只读取状态文件。</small></span>
               <span id="codex-hook-state" class="status-pill">未检测</span>
             </div>
@@ -91,7 +119,7 @@
               <button id="install-codex-hooks" class="primary-button" type="button">安装 / 修复 Hooks</button>
               <button id="clear-codex-status" class="secondary-button compact" type="button">清除状态</button>
             </div>
-            <p class="setting-hint">只会维护 ~/.codex/config.toml 中标记为 Wisland 的区块，不会覆盖其他 Codex 设置。安装后需要重启 Codex。</p>
+            <p class="setting-hint">只维护 ~/.codex/config.toml 中标记为 Wisland 的区块，不覆盖其他 Codex 设置。安装后需要重启 Codex。</p>
           </div>
         </section>
 
@@ -99,14 +127,42 @@
           <div class="setting-group">
             <h3>随手记</h3>
             <label class="field-row">
-              <span><strong>Vault 路径</strong><small>填写包含 .obsidian 文件夹的笔记库根目录。</small></span>
-              <input id="obsidian-vault-path" type="text" placeholder="C:\Notes\My Vault" />
+              <span><strong>Vault 路径</strong><small>包含 .obsidian 文件夹的笔记库根目录。</small></span>
+              <input id="obsidian-vault-path" type="text" class="autosave" placeholder="C:\Notes\My Vault" />
             </label>
             <label class="field-row">
               <span><strong>每日笔记目录</strong><small>相对于 Vault；不存在时会自动创建。</small></span>
-              <input id="obsidian-daily-notes-dir" type="text" placeholder="Daily" />
+              <input id="obsidian-daily-notes-dir" type="text" class="autosave" placeholder="Daily" />
             </label>
-            <p class="setting-hint">保存设置后，在灵动岛上右键选择“随手记”，内容会追加到 YYYY-MM-DD.md。</p>
+            <p class="setting-hint">更改会自动保存；在胶囊日记页可直接写入当天的 YYYY-MM-DD.md。</p>
+          </div>
+        </section>
+
+        <section class="page" id="page-custom">
+          <div class="setting-group">
+            <h3>Codex 左侧 · 额度环</h3>
+            <p class="setting-hint standalone">保留额度环，或从素材库选择外部 GIF / 动图。</p>
+            <div id="left-visual-options" class="visual-options"></div>
+            <div class="import-row"><button id="import-left-visual" class="secondary-button compact" type="button">导入到素材库</button><span id="left-import-name">可连续导入多个素材</span></div>
+            <input id="left-visual-file" type="file" multiple accept="image/gif,image/webp,image/apng,image/png,image/svg+xml" hidden />
+          </div>
+          <div class="setting-group">
+            <h3>Codex 右侧 · 状态灯</h3>
+            <p class="setting-hint standalone">保留状态灯语义，或从同一个素材库选择外部动图。</p>
+            <div id="right-visual-options" class="visual-options"></div>
+            <div class="import-row"><button id="import-right-visual" class="secondary-button compact" type="button">导入到素材库</button><span id="right-import-name">可连续导入多个素材</span></div>
+            <input id="right-visual-file" type="file" multiple accept="image/gif,image/webp,image/apng,image/png,image/svg+xml" hidden />
+          </div>
+          <div class="setting-group">
+            <h3>动态边框</h3>
+            <div id="border-effect-options" class="effect-options">
+              <button type="button" data-effect="off"><i class="effect-preview effect-off"></i><span>Off</span></button>
+              <button type="button" data-effect="aurora"><i class="effect-preview effect-aurora"></i><span>Aurora</span></button>
+              <button type="button" data-effect="mono"><i class="effect-preview effect-mono"></i><span>Mono</span></button>
+            </div>
+            <div id="border-asset-options" class="visual-options border-assets"></div>
+            <div class="import-row"><button id="import-border-visual" class="secondary-button compact" type="button">导入边框动图</button><span id="border-import-name">可保存并切换多个边框素材</span></div>
+            <input id="border-visual-file" type="file" multiple accept="image/gif,image/webp,image/apng,image/png,image/svg+xml" hidden />
           </div>
         </section>
 
@@ -115,20 +171,15 @@
             <h3>自动隐藏</h3>
             <label class="setting-row">
               <span><strong>启用进程黑名单</strong><small>全屏或前台程序匹配时隐藏 Wisland。</small></span>
-              <input id="blacklist-enabled" type="checkbox" class="toggle" />
+              <input id="blacklist-enabled" type="checkbox" class="toggle autosave" />
             </label>
-            <textarea id="blacklist" rows="8" placeholder="game.exe&#10;presentation.exe"></textarea>
+            <textarea id="blacklist" class="autosave" rows="8" placeholder="game.exe&#10;presentation.exe"></textarea>
           </div>
           <div class="setting-group">
             <h3>诊断</h3>
             <label class="setting-row">
-              <span><strong>日志等级</strong><small>开发阶段建议使用 info，排查问题时切换为 debug。</small></span>
-              <select id="log-level">
-                <option value="error">error</option>
-                <option value="warn">warn</option>
-                <option value="info">info</option>
-                <option value="debug">debug</option>
-              </select>
+              <span><strong>日志等级</strong><small>日常使用 info，排查问题时切换为 debug。</small></span>
+              <select id="log-level" class="autosave"><option value="error">error</option><option value="warn">warn</option><option value="info">info</option><option value="debug">debug</option></select>
             </label>
             <button id="open-log-dir" class="secondary-button" type="button">打开日志目录</button>
           </div>
@@ -136,17 +187,14 @@
 
         <section class="page" id="page-about">
           <div class="empty-state">
-            <div class="brand-mark large">W</div>
-            <h3>Wisland 0.1.0</h3>
-            <p>基于 tauri-island 精简重构的个人桌面助手壳。当前保留胶囊、音乐、隐私提示、通知和黑名单。</p>
-            <p class="muted">自动更新已停用，避免上游版本覆盖个人定制。</p>
+            <img class="brand-mark large" src="/src/assets/wisland-icon.png" alt="" /><h3>Wisland 0.1.2</h3>
+            <button id="open-github-profile" class="github-profile-link" type="button" aria-label="打开 Lev1z 的 GitHub 主页">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 .7a11.5 11.5 0 0 0-3.64 22.41c.58.11.79-.25.79-.56v-2.23c-3.22.7-3.9-1.37-3.9-1.37-.53-1.34-1.29-1.7-1.29-1.7-1.05-.72.08-.71.08-.71 1.16.08 1.78 1.2 1.78 1.2 1.04 1.77 2.72 1.26 3.38.96.1-.75.4-1.26.74-1.55-2.57-.29-5.27-1.28-5.27-5.69 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.16 1.18a10.9 10.9 0 0 1 5.76 0c2.19-1.49 3.16-1.18 3.16-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.42-2.71 5.39-5.29 5.68.42.36.79 1.06.79 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .7Z"/></svg>
+              <span>github.com/Lev1z</span>
+            </button>
           </div>
         </section>
       </div>
-
-      <footer class="content-footer">
-        <button id="save-button" class="primary-button" type="button">保存设置</button>
-      </footer>
     </section>
   </main>
   <script type="module" src="/src/settings.ts"></script>

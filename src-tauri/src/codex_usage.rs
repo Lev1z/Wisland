@@ -106,10 +106,7 @@ fn quota_from_response(response: &Value) -> Result<CodexQuota, String> {
         available: true,
         remaining_percent: Some(100.0 - used_percent),
         used_percent: Some(used_percent),
-        window_duration_mins: selected
-            .0
-            .get("windowDurationMins")
-            .and_then(Value::as_u64),
+        window_duration_mins: selected.0.get("windowDurationMins").and_then(Value::as_u64),
         resets_at: selected.0.get("resetsAt").and_then(Value::as_u64),
         message: None,
     })

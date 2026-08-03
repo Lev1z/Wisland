@@ -3,6 +3,19 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+#[cfg(windows)]
+use windows::core::PWSTR;
+#[cfg(windows)]
+use windows::Win32::Foundation::CloseHandle;
+#[cfg(windows)]
+use windows::Win32::System::Diagnostics::ToolHelp::{
+    CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
+};
+#[cfg(windows)]
+use windows::Win32::System::Threading::{
+    OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
+};
+
 const RUNNING_SCRIPT_NAME: &str = "wisland-codex-running.cmd";
 const STATUS_SCRIPT_NAME: &str = "wisland-codex-status.ps1";
 const RUNNING_SCRIPT: &str = include_str!("../../scripts/wisland-codex-running.cmd");
@@ -58,6 +71,69 @@ fn hold_path() -> PathBuf {
     data_dir().join("codex-running-hold.flag")
 }
 
+fn is_codex_desktop_executable(path: &str) -> bool {
+    let normalized = path.replace('/', "\\").to_ascii_lowercase();
+    normalized.ends_with("\\chatgpt.exe") && normalized.contains("\\openai.codex_")
+}
+
+#[cfg(windows)]
+fn codex_desktop_running() -> bool {
+    unsafe {
+        let Ok(snapshot) = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) else {
+            return false;
+        };
+        let mut entry = PROCESSENTRY32W {
+            dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
+            ..Default::default()
+        };
+        let mut found = false;
+
+        if Process32FirstW(snapshot, &mut entry).is_ok() {
+            loop {
+                let name_end = entry
+                    .szExeFile
+                    .iter()
+                    .position(|value| *value == 0)
+                    .unwrap_or(entry.szExeFile.len());
+                let process_name = String::from_utf16_lossy(&entry.szExeFile[..name_end]);
+                if process_name.eq_ignore_ascii_case("ChatGPT.exe") {
+                    if let Ok(process) = OpenProcess(
+                        PROCESS_QUERY_LIMITED_INFORMATION,
+                        false,
+                        entry.th32ProcessID,
+                    ) {
+                        let mut path_buffer = [0u16; 1024];
+                        let mut path_length = path_buffer.len() as u32;
+                        if QueryFullProcessImageNameW(
+                            process,
+                            PROCESS_NAME_WIN32,
+                            PWSTR(path_buffer.as_mut_ptr()),
+                            &mut path_length,
+                        )
+                        .is_ok()
+                        {
+                            let executable =
+                                String::from_utf16_lossy(&path_buffer[..path_length as usize]);
+                            found = is_codex_desktop_executable(&executable);
+                        }
+                        let _ = CloseHandle(process);
+                    }
+                }
+                if found || Process32NextW(snapshot, &mut entry).is_err() {
+                    break;
+                }
+            }
+        }
+        let _ = CloseHandle(snapshot);
+        found
+    }
+}
+
+#[cfg(not(windows))]
+fn codex_desktop_running() -> bool {
+    true
+}
+
 fn visible_running(now: u64) -> bool {
     if let Ok(metadata) = fs::metadata(running_path()) {
         if let Ok(modified) = metadata.modified() {
@@ -82,6 +158,22 @@ fn visible_running(now: u64) -> bool {
 pub fn get_codex_status() -> CodexStatus {
     let now = now_ms();
     let path = status_path();
+    let persisted = fs::read_to_string(&path)
+        .ok()
+        .and_then(|content| serde_json::from_str::<PersistedStatus>(&content).ok());
+
+    // Hooks only describe the last task; the desktop process decides whether Codex is online.
+    // Clear transient running markers after Codex exits so a later restart cannot inherit orange.
+    if !codex_desktop_running() {
+        let _ = fs::remove_file(running_path());
+        let _ = fs::remove_file(hold_path());
+        return CodexStatus {
+            phase: "stale".into(),
+            updated_at: persisted.as_ref().map_or(0, |status| status.updated_at),
+            status_path: path.to_string_lossy().into_owned(),
+        };
+    }
+
     if visible_running(now) {
         return CodexStatus {
             phase: "running".into(),
@@ -90,9 +182,6 @@ pub fn get_codex_status() -> CodexStatus {
         };
     }
 
-    let persisted = fs::read_to_string(&path)
-        .ok()
-        .and_then(|content| serde_json::from_str::<PersistedStatus>(&content).ok());
     match persisted {
         Some(status) if now.saturating_sub(status.updated_at) <= STALE_AFTER_MS => CodexStatus {
             phase: match status.phase.as_str() {
@@ -109,7 +198,7 @@ pub fn get_codex_status() -> CodexStatus {
         },
         None => CodexStatus {
             phase: "idle".into(),
-            updated_at: 0,
+            updated_at: now,
             status_path: path.to_string_lossy().into_owned(),
         },
     }
@@ -150,8 +239,7 @@ fn remove_managed_block(content: &str) -> String {
 }
 
 fn write_scripts(directory: &Path) -> Result<(PathBuf, PathBuf), String> {
-    fs::create_dir_all(directory)
-        .map_err(|error| format!("无法创建 Wisland 数据目录：{error}"))?;
+    fs::create_dir_all(directory).map_err(|error| format!("无法创建 Wisland 数据目录：{error}"))?;
     let running = directory.join(RUNNING_SCRIPT_NAME);
     let status = directory.join(STATUS_SCRIPT_NAME);
     fs::write(&running, RUNNING_SCRIPT)
@@ -168,8 +256,7 @@ pub fn install_codex_status_hooks() -> Result<HookInstallResult, String> {
     let codex_home = dirs::home_dir()
         .ok_or_else(|| "无法定位用户目录".to_string())?
         .join(".codex");
-    fs::create_dir_all(&codex_home)
-        .map_err(|error| format!("无法创建 Codex 配置目录：{error}"))?;
+    fs::create_dir_all(&codex_home).map_err(|error| format!("无法创建 Codex 配置目录：{error}"))?;
     let config_path = codex_home.join("config.toml");
     let existing = fs::read_to_string(&config_path).unwrap_or_default();
     let base = remove_managed_block(&existing);
@@ -223,5 +310,18 @@ mod tests {
         assert!(output.contains("model = \"gpt-5\""));
         assert!(output.contains("[projects.demo]"));
         assert!(!output.contains("old = true"));
+    }
+
+    #[test]
+    fn identifies_only_the_codex_desktop_package_executable() {
+        assert!(is_codex_desktop_executable(
+            r"C:\Program Files\WindowsApps\OpenAI.Codex_26.721.11231.0_x64__id\app\ChatGPT.exe"
+        ));
+        assert!(!is_codex_desktop_executable(
+            r"C:\Program Files\WindowsApps\OpenAI.ChatGPT_1.0_x64__id\app\ChatGPT.exe"
+        ));
+        assert!(!is_codex_desktop_executable(
+            r"C:\Users\PC\.vscode\extensions\openai.chatgpt\bin\codex.exe"
+        ));
     }
 }

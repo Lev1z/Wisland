@@ -4,6 +4,7 @@ import {
   capsule,
   fileDropOverlay,
   trayContextMenu,
+  trayArea,
   trayCopy,
   trayCount,
   trayEmpty,
@@ -51,6 +52,20 @@ function hideContextMenu(): void {
   trayContextMenu.hidden = true;
 }
 
+function showContextMenu(event: MouseEvent): void {
+  trayContextMenu.hidden = false;
+  trayContextMenu.style.left = "0px";
+  trayContextMenu.style.top = "0px";
+
+  const area = trayArea.getBoundingClientRect();
+  const menu = trayContextMenu.getBoundingClientRect();
+  const inset = 4;
+  const left = Math.max(inset, Math.min(event.clientX - area.left, area.width - menu.width - inset));
+  const top = Math.max(inset, Math.min(event.clientY - area.top, area.height - menu.height - inset));
+  trayContextMenu.style.left = `${left}px`;
+  trayContextMenu.style.top = `${top}px`;
+}
+
 function select(path: string): void {
   selectedPath = path;
   for (const row of trayList.querySelectorAll<HTMLElement>(".tray-file")) {
@@ -59,8 +74,10 @@ function select(path: string): void {
 }
 
 function render(): void {
+  hideContextMenu();
   trayCount.textContent = String(paths.length);
   trayEmpty.classList.toggle("visible", paths.length === 0);
+  trayArea.classList.toggle("tray-is-empty", paths.length === 0);
   trayList.replaceChildren();
 
   for (const path of paths) {
@@ -91,10 +108,7 @@ function render(): void {
       event.preventDefault();
       event.stopPropagation();
       select(path);
-      const bounds = trayList.getBoundingClientRect();
-      trayContextMenu.style.left = `${Math.max(0, Math.min(event.clientX - bounds.left, bounds.width - 92))}px`;
-      trayContextMenu.style.top = `${Math.max(0, event.clientY - bounds.top - 4)}px`;
-      trayContextMenu.hidden = false;
+      showContextMenu(event);
     });
     trayList.appendChild(row);
   }
@@ -157,5 +171,17 @@ export function initFileTray(): void {
     render();
   });
 
+  trayList.addEventListener("wheel", (event) => {
+    if (trayList.scrollWidth <= trayList.clientWidth + 1) return;
+    const delta = Math.abs(event.deltaY) >= Math.abs(event.deltaX) ? event.deltaY : event.deltaX;
+    if (Math.abs(delta) < 1) return;
+    event.preventDefault();
+    event.stopPropagation();
+    hideContextMenu();
+    trayList.scrollLeft += delta;
+  }, { passive: false });
+
   capsule.addEventListener("click", hideContextMenu);
+  capsule.addEventListener("pointerleave", hideContextMenu);
+  window.addEventListener("blur", hideContextMenu);
 }

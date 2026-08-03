@@ -1,9 +1,63 @@
+use crate::logger;
 use std::sync::{Mutex, OnceLock};
+use std::time::Instant;
 use windows::Media::Control::GlobalSystemMediaTransportControlsSessionManager as MediaSessionManager;
 use windows::Media::Control::GlobalSystemMediaTransportControlsSessionPlaybackStatus as PlaybackStatus;
-use windows::Media::MediaPlaybackType as PlaybackType;
 use windows::Media::MediaPlaybackAutoRepeatMode;
-use crate::logger;
+use windows::Media::MediaPlaybackType as PlaybackType;
+
+pub(crate) fn start_audio_peak_monitor(
+    window: tauri::WebviewWindow,
+    media_active: std::sync::Arc<std::sync::atomic::AtomicBool>,
+) {
+    use std::thread;
+    use std::time::Duration;
+    use tauri::Emitter;
+    use windows::Win32::Media::Audio::Endpoints::IAudioMeterInformation;
+    use windows::Win32::Media::Audio::{
+        eConsole, eRender, IMMDeviceEnumerator, MMDeviceEnumerator,
+    };
+    use windows::Win32::System::Com::{
+        CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED,
+    };
+
+    let _ = thread::Builder::new()
+        .name("audio-peak-monitor".into())
+        .spawn(move || unsafe {
+            let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+            loop {
+                let session = (|| -> Result<IAudioMeterInformation, String> {
+                    let enumerator: IMMDeviceEnumerator =
+                        CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)
+                            .map_err(|error| error.to_string())?;
+                    let device = enumerator
+                        .GetDefaultAudioEndpoint(eRender, eConsole)
+                        .map_err(|error| error.to_string())?;
+                    device
+                        .Activate(CLSCTX_ALL, None)
+                        .map_err(|error| error.to_string())
+                })();
+
+                let Ok(meter) = session else {
+                    thread::sleep(Duration::from_secs(1));
+                    continue;
+                };
+                loop {
+                    if !media_active.load(std::sync::atomic::Ordering::Relaxed) {
+                        thread::sleep(Duration::from_millis(250));
+                        continue;
+                    }
+                    match meter.GetPeakValue() {
+                        Ok(peak) => {
+                            let _ = window.emit("audio-peak", peak.clamp(0.0, 1.0));
+                            thread::sleep(Duration::from_millis(50));
+                        }
+                        Err(_) => break,
+                    }
+                }
+            }
+        });
+}
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct MediaInfo {
@@ -14,6 +68,71 @@ pub(crate) struct MediaInfo {
     pub duration_ms: i64,
     pub genre: String,
     pub seekable: bool,
+}
+
+/// Supplies a monotonic playback position when a player exposes SMTC metadata
+/// but leaves its timeline frozen (commonly at 0ms). Any real SMTC movement or
+/// track change immediately becomes the new source of truth.
+#[derive(Debug)]
+pub(crate) struct PlaybackPositionClock {
+    track_key: String,
+    last_reported_ms: i64,
+    estimated_ms: i64,
+    sampled_at: Instant,
+    initialized: bool,
+}
+
+impl Default for PlaybackPositionClock {
+    fn default() -> Self {
+        Self {
+            track_key: String::new(),
+            last_reported_ms: 0,
+            estimated_ms: 0,
+            sampled_at: Instant::now(),
+            initialized: false,
+        }
+    }
+}
+
+impl PlaybackPositionClock {
+    pub(crate) fn update(&mut self, track_key: &str, reported_ms: i64, playing: bool) -> i64 {
+        self.update_at(track_key, reported_ms, playing, Instant::now())
+    }
+
+    fn update_at(&mut self, track_key: &str, reported_ms: i64, playing: bool, now: Instant) -> i64 {
+        let reported_ms = reported_ms.max(0);
+        if !self.initialized || self.track_key != track_key {
+            self.track_key.clear();
+            self.track_key.push_str(track_key);
+            self.last_reported_ms = reported_ms;
+            self.estimated_ms = reported_ms;
+            self.sampled_at = now;
+            self.initialized = true;
+            return reported_ms;
+        }
+
+        let elapsed_ms = now
+            .saturating_duration_since(self.sampled_at)
+            .as_millis()
+            .min(i64::MAX as u128) as i64;
+        self.sampled_at = now;
+
+        if reported_ms != self.last_reported_ms {
+            self.estimated_ms = reported_ms;
+        } else if playing {
+            self.estimated_ms = self.estimated_ms.saturating_add(elapsed_ms);
+        }
+        self.last_reported_ms = reported_ms;
+        self.estimated_ms
+    }
+
+    pub(crate) fn reset(&mut self) {
+        self.initialized = false;
+        self.track_key.clear();
+        self.last_reported_ms = 0;
+        self.estimated_ms = 0;
+        self.sampled_at = Instant::now();
+    }
 }
 
 #[derive(Clone, Default)]
@@ -52,33 +171,33 @@ pub(crate) fn is_preferred_music_app(app_id: &str) -> bool {
     let id = app_id.to_ascii_lowercase();
     [
         // —— 国内音乐平台 ——
-        "cloudmusic",   // 网易云音乐
-        "music.163",    // 网易云音乐（UWP / 网页版 PWA）
-        "qqmusic",      // QQ 音乐
-        "kugou",        // 酷狗音乐
-        "kuwo",         // 酷我音乐
-        "qishui",       // 汽水音乐
+        "cloudmusic",                       // 网易云音乐
+        "music.163",                        // 网易云音乐（UWP / 网页版 PWA）
+        "qqmusic",                          // QQ 音乐
+        "kugou",                            // 酷狗音乐
+        "kuwo",                             // 酷我音乐
+        "qishui",                           // 汽水音乐
         "\u{6c7d}\u{6c34}\u{97f3}\u{4e50}", // 汽水音乐（中文名）
-        "migu",         // 咪咕音乐
+        "migu",                             // 咪咕音乐
         // —— 国际音乐平台 ——
-        "spotify",      // Spotify
-        "itunes",       // Apple Music / iTunes
-        "appleinc.applemusicwin_nzyj5cx40ttqa!app",   // Apple Music
-        "tidal",        // TIDAL
-        "deezer",       // Deezer
-        "amazonmusic",  // Amazon Music
-        "amazon music", // Amazon Music（备用）
+        "spotify",                                  // Spotify
+        "itunes",                                   // Apple Music / iTunes
+        "appleinc.applemusicwin_nzyj5cx40ttqa!app", // Apple Music
+        "tidal",                                    // TIDAL
+        "deezer",                                   // Deezer
+        "amazonmusic",                              // Amazon Music
+        "amazon music",                             // Amazon Music（备用）
         // —— 本地播放器 ——
-        "foobar",       // foobar2000 / foobox
-        "vlc",          // VLC media player
-        "aimp",         // AIMP
-        "musicbee",     // MusicBee
-        "winamp",       // Winamp
-        "wacup",        // WACUP（Winamp 社区版）
-        "mediamonkey",  // MediaMonkey
-        "dopamine",     // Dopamine
+        "foobar",      // foobar2000 / foobox
+        "vlc",         // VLC media player
+        "aimp",        // AIMP
+        "musicbee",    // MusicBee
+        "winamp",      // Winamp
+        "wacup",       // WACUP（Winamp 社区版）
+        "mediamonkey", // MediaMonkey
+        "dopamine",    // Dopamine
         // —— Windows 内置 ——
-        "zunemusic",    // Groove 音乐 / Windows Media Player（新版）
+        "zunemusic",               // Groove 音乐 / Windows Media Player（新版）
         "microsoft.windows.media", // Windows Media Player
         // —— 第三方开源 / 小众 ——
         "lx-music",     // 洛雪音乐
@@ -117,10 +236,6 @@ fn is_browser_or_video_app(app_id: &str) -> bool {
     .iter()
     .any(|k| id.contains(k))
 }
-
-
-
-
 
 /// 从 SMTC 媒体属性中提取封面图片并编码为 base64
 fn extract_thumbnail(
@@ -176,17 +291,23 @@ fn read_smtc_session_info(
     if let Err(ref e) = playback_info {
         crate::logger::warn("SMTC", &format!("GetPlaybackInfo failed: {:?}", e));
     }
-    let seekable = playback_info.as_ref().ok()
+    let seekable = playback_info
+        .as_ref()
+        .ok()
         .and_then(|p| p.Controls().ok())
         .and_then(|c| c.IsPlaybackPositionEnabled().ok())
         .unwrap_or(false);
-    let playback_status = playback_info.ok()
-        .and_then(|p| {
-            p.PlaybackStatus().map_err(|e| {
+    let playback_status = playback_info.ok().and_then(|p| {
+        p.PlaybackStatus()
+            .map_err(|e| {
                 crate::logger::warn("SMTC", &format!("PlaybackStatus failed: {:?}", e));
-            }).ok()
-        });
-    if matches!(playback_status, Some(GlobalSystemMediaTransportControlsSessionPlaybackStatus::Closed)) {
+            })
+            .ok()
+    });
+    if matches!(
+        playback_status,
+        Some(GlobalSystemMediaTransportControlsSessionPlaybackStatus::Closed)
+    ) {
         return None;
     }
     let is_playing = matches!(
@@ -255,19 +376,51 @@ fn read_smtc_session_info(
         } else {
             MAX_DURATION_MS
         };
-        if position_ms < 0 || position_ms > max_pos { 0 } else { position_ms }
+        if position_ms < 0 || position_ms > max_pos {
+            0
+        } else {
+            position_ms
+        }
     };
 
-    let media_props_result = session.TryGetMediaPropertiesAsync()
-        .map_err(|e| { crate::logger::warn("SMTC", &format!("TryGetMediaPropertiesAsync failed: {:?}", e)); })
+    let media_props_result = session
+        .TryGetMediaPropertiesAsync()
+        .map_err(|e| {
+            crate::logger::warn(
+                "SMTC",
+                &format!("TryGetMediaPropertiesAsync failed: {:?}", e),
+            );
+        })
         .ok()
-        .and_then(|op| op.get().map_err(|e| { crate::logger::warn("SMTC", &format!("MediaProperties.get() failed: {:?}", e)); }).ok());
+        .and_then(|op| {
+            op.get()
+                .map_err(|e| {
+                    crate::logger::warn("SMTC", &format!("MediaProperties.get() failed: {:?}", e));
+                })
+                .ok()
+        });
     let (title, artist, album_title, album_artist, genre) = match media_props_result {
         Some(props) => {
-            let title = props.Title().ok().map(|v| v.to_string_lossy()).unwrap_or_default();
-            let artist = props.Artist().ok().map(|v| v.to_string_lossy()).unwrap_or_default();
-            let album_title = props.AlbumTitle().ok().map(|v| v.to_string_lossy()).unwrap_or_default();
-            let album_artist = props.AlbumArtist().ok().map(|v| v.to_string_lossy()).unwrap_or_default();
+            let title = props
+                .Title()
+                .ok()
+                .map(|v| v.to_string_lossy())
+                .unwrap_or_default();
+            let artist = props
+                .Artist()
+                .ok()
+                .map(|v| v.to_string_lossy())
+                .unwrap_or_default();
+            let album_title = props
+                .AlbumTitle()
+                .ok()
+                .map(|v| v.to_string_lossy())
+                .unwrap_or_default();
+            let album_artist = props
+                .AlbumArtist()
+                .ok()
+                .map(|v| v.to_string_lossy())
+                .unwrap_or_default();
             let genre = props
                 .Genres()
                 .ok()
@@ -292,17 +445,37 @@ fn read_smtc_session_info(
                 .unwrap_or_default();
             (title, artist, album_title, album_artist, genre)
         }
-        None => (String::new(), String::new(), String::new(), String::new(), String::new()),
+        None => (
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+        ),
     };
 
-    Some((MediaInfo { title, artist, album_title, album_artist, duration_ms, genre, seekable }, position_ms, is_playing))
+    Some((
+        MediaInfo {
+            title,
+            artist,
+            album_title,
+            album_artist,
+            duration_ms,
+            genre,
+            seekable,
+        },
+        position_ms,
+        is_playing,
+    ))
 }
 
 /// 将当前 SMTC 会话的所有可读字段打印到日志，用于排查不同播放器行为差异
 pub(crate) fn dump_smtc_session(app_id: &str) {
-    
-
-    let Ok(manager) = MediaSessionManager::RequestAsync().ok().and_then(|a| a.get().ok()).ok_or(()) else {
+    let Ok(manager) = MediaSessionManager::RequestAsync()
+        .ok()
+        .and_then(|a| a.get().ok())
+        .ok_or(())
+    else {
         crate::logger::warn("SMTC-Dump", "RequestAsync failed");
         return;
     };
@@ -310,34 +483,71 @@ pub(crate) fn dump_smtc_session(app_id: &str) {
     // 找到对应 app_id 的 session
     let sessions = match manager.GetSessions().ok() {
         Some(s) => s,
-        None => { crate::logger::warn("SMTC-Dump", "GetSessions failed"); return; }
+        None => {
+            crate::logger::warn("SMTC-Dump", "GetSessions failed");
+            return;
+        }
     };
     let size = sessions.Size().ok().unwrap_or(0);
     for i in 0..size {
-        let session = match sessions.GetAt(i) { Ok(s) => s, Err(_) => continue };
-        let sid = session.SourceAppUserModelId().ok()
+        let session = match sessions.GetAt(i) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        let sid = session
+            .SourceAppUserModelId()
+            .ok()
             .map(|s| s.to_string_lossy().to_ascii_lowercase())
             .unwrap_or_default();
         logger::debug("SMTC-Dump", &format!("Session ID: {}", sid));
-        if !app_id.is_empty() && !sid.to_ascii_lowercase().contains(&app_id.to_ascii_lowercase()) {
+        if !app_id.is_empty()
+            && !sid
+                .to_ascii_lowercase()
+                .contains(&app_id.to_ascii_lowercase())
+        {
             continue;
         }
 
         let mut lines = vec![format!("=== SMTC dump app_id='{}' ===", sid)];
 
         // --- MediaProperties ---
-        if let Some(props) = session.TryGetMediaPropertiesAsync().ok().and_then(|op| op.get().ok()) {
-            lines.push(format!("  Title:          {:?}", props.Title().ok().map(|v| v.to_string_lossy())));
-            lines.push(format!("  Artist:         {:?}", props.Artist().ok().map(|v| v.to_string_lossy())));
-            lines.push(format!("  AlbumTitle:     {:?}", props.AlbumTitle().ok().map(|v| v.to_string_lossy())));
-            lines.push(format!("  AlbumArtist:    {:?}", props.AlbumArtist().ok().map(|v| v.to_string_lossy())));
-            lines.push(format!("  Subtitle:       {:?}", props.Subtitle().ok().map(|v| v.to_string_lossy())));
+        if let Some(props) = session
+            .TryGetMediaPropertiesAsync()
+            .ok()
+            .and_then(|op| op.get().ok())
+        {
+            lines.push(format!(
+                "  Title:          {:?}",
+                props.Title().ok().map(|v| v.to_string_lossy())
+            ));
+            lines.push(format!(
+                "  Artist:         {:?}",
+                props.Artist().ok().map(|v| v.to_string_lossy())
+            ));
+            lines.push(format!(
+                "  AlbumTitle:     {:?}",
+                props.AlbumTitle().ok().map(|v| v.to_string_lossy())
+            ));
+            lines.push(format!(
+                "  AlbumArtist:    {:?}",
+                props.AlbumArtist().ok().map(|v| v.to_string_lossy())
+            ));
+            lines.push(format!(
+                "  Subtitle:       {:?}",
+                props.Subtitle().ok().map(|v| v.to_string_lossy())
+            ));
             lines.push(format!("  TrackNumber:    {:?}", props.TrackNumber().ok()));
-            lines.push(format!("  AlbumTrackCnt:  {:?}", props.AlbumTrackCount().ok()));
-            let genres: Vec<String> = props.Genres().ok()
+            lines.push(format!(
+                "  AlbumTrackCnt:  {:?}",
+                props.AlbumTrackCount().ok()
+            ));
+            let genres: Vec<String> = props
+                .Genres()
+                .ok()
                 .map(|g| {
                     let n = g.Size().ok().unwrap_or(0);
-                    (0..n).filter_map(|i| g.GetAt(i).ok().map(|v| v.to_string_lossy()))
+                    (0..n)
+                        .filter_map(|i| g.GetAt(i).ok().map(|v| v.to_string_lossy()))
                         .collect()
                 })
                 .unwrap_or_default();
@@ -351,21 +561,21 @@ pub(crate) fn dump_smtc_session(app_id: &str) {
         // --- PlaybackInfo ---
         if let Ok(pb) = session.GetPlaybackInfo() {
             let status = pb.PlaybackStatus().ok().map(|s| match s {
-                PlaybackStatus::Playing  => "Playing",
-                PlaybackStatus::Paused   => "Paused",
-                PlaybackStatus::Stopped  => "Stopped",
+                PlaybackStatus::Playing => "Playing",
+                PlaybackStatus::Paused => "Paused",
+                PlaybackStatus::Stopped => "Stopped",
                 PlaybackStatus::Changing => "Changing",
-                PlaybackStatus::Closed   => "Closed",
-                PlaybackStatus::Opened   => "Opened",
+                PlaybackStatus::Closed => "Closed",
+                PlaybackStatus::Opened => "Opened",
                 _ => "Unknown",
             });
             lines.push(format!("  PlaybackStatus: {:?}", status));
             let ptype = pb.PlaybackType().ok().map(|t| match t.Value() {
                 Ok(v) => match v {
                     PlaybackType::Unknown => "Unknown",
-                    PlaybackType::Music   => "Music",
-                    PlaybackType::Video   => "Video",
-                    PlaybackType::Image   => "Image",
+                    PlaybackType::Music => "Music",
+                    PlaybackType::Video => "Video",
+                    PlaybackType::Image => "Image",
                     _ => "Other",
                 },
                 Err(_) => "null",
@@ -375,24 +585,62 @@ pub(crate) fn dump_smtc_session(app_id: &str) {
             lines.push(format!("  PlaybackRate:   {:?}", rate));
             let shuffle = pb.IsShuffleActive().ok().map(|r| r.Value().ok());
             lines.push(format!("  IsShuffleActive:{:?}", shuffle));
-            let repeat = pb.AutoRepeatMode().ok().map(|r| r.Value().ok().map(|v| match v {
-                MediaPlaybackAutoRepeatMode::None  => "None",
-                MediaPlaybackAutoRepeatMode::Track => "Track",
-                MediaPlaybackAutoRepeatMode::List  => "List",
-                _ => "Other",
-            }));
+            let repeat = pb.AutoRepeatMode().ok().map(|r| {
+                r.Value().ok().map(|v| match v {
+                    MediaPlaybackAutoRepeatMode::None => "None",
+                    MediaPlaybackAutoRepeatMode::Track => "Track",
+                    MediaPlaybackAutoRepeatMode::List => "List",
+                    _ => "Other",
+                })
+            });
             lines.push(format!("  AutoRepeatMode: {:?}", repeat));
         }
 
         // --- TimelineProperties ---
         if let Ok(tl) = session.GetTimelineProperties() {
             let ticks_to_ms = |t: i64| t / 10_000;
-            lines.push(format!("  StartTime:      {}ms", tl.StartTime().ok().map(|t| ticks_to_ms(t.Duration)).unwrap_or(-1)));
-            lines.push(format!("  EndTime:        {}ms", tl.EndTime().ok().map(|t| ticks_to_ms(t.Duration)).unwrap_or(-1)));
-            lines.push(format!("  MinSeekTime:    {}ms", tl.MinSeekTime().ok().map(|t| ticks_to_ms(t.Duration)).unwrap_or(-1)));
-            lines.push(format!("  MaxSeekTime:    {}ms", tl.MaxSeekTime().ok().map(|t| ticks_to_ms(t.Duration)).unwrap_or(-1)));
-            lines.push(format!("  Position:       {}ms", tl.Position().ok().map(|t| ticks_to_ms(t.Duration)).unwrap_or(-1)));
-            lines.push(format!("  LastUpdatedTime:{}", tl.LastUpdatedTime().ok().map(|t| t.UniversalTime).unwrap_or(-1)));
+            lines.push(format!(
+                "  StartTime:      {}ms",
+                tl.StartTime()
+                    .ok()
+                    .map(|t| ticks_to_ms(t.Duration))
+                    .unwrap_or(-1)
+            ));
+            lines.push(format!(
+                "  EndTime:        {}ms",
+                tl.EndTime()
+                    .ok()
+                    .map(|t| ticks_to_ms(t.Duration))
+                    .unwrap_or(-1)
+            ));
+            lines.push(format!(
+                "  MinSeekTime:    {}ms",
+                tl.MinSeekTime()
+                    .ok()
+                    .map(|t| ticks_to_ms(t.Duration))
+                    .unwrap_or(-1)
+            ));
+            lines.push(format!(
+                "  MaxSeekTime:    {}ms",
+                tl.MaxSeekTime()
+                    .ok()
+                    .map(|t| ticks_to_ms(t.Duration))
+                    .unwrap_or(-1)
+            ));
+            lines.push(format!(
+                "  Position:       {}ms",
+                tl.Position()
+                    .ok()
+                    .map(|t| ticks_to_ms(t.Duration))
+                    .unwrap_or(-1)
+            ));
+            lines.push(format!(
+                "  LastUpdatedTime:{}",
+                tl.LastUpdatedTime()
+                    .ok()
+                    .map(|t| t.UniversalTime)
+                    .unwrap_or(-1)
+            ));
         }
 
         crate::logger::info("SMTC-Dump", &lines.join("\n"));
@@ -400,7 +648,12 @@ pub(crate) fn dump_smtc_session(app_id: &str) {
     }
 }
 
-pub(crate) fn select_best_smtc_session(
+pub(crate) fn create_smtc_manager() -> Option<MediaSessionManager> {
+    MediaSessionManager::RequestAsync().ok()?.get().ok()
+}
+
+fn select_best_smtc_session_with_manager(
+    session_manager: &MediaSessionManager,
 ) -> Option<(
     windows::Media::Control::GlobalSystemMediaTransportControlsSession,
     MediaInfo,
@@ -408,9 +661,6 @@ pub(crate) fn select_best_smtc_session(
     bool,
     String,
 )> {
-    use windows::Media::Control::GlobalSystemMediaTransportControlsSessionManager as MediaSessionManager;
-
-    let session_manager = MediaSessionManager::RequestAsync().ok()?.get().ok()?;
     let current_app_id = session_manager
         .GetCurrentSession()
         .ok()
@@ -456,7 +706,10 @@ pub(crate) fn select_best_smtc_session(
             let allowed = !whitelist.app_ids.is_empty()
                 && whitelist.app_ids.iter().any(|id| app_id_lc.contains(id));
             if !allowed {
-                logger::debug("SMTC-WHITELIST", &format!("app_id not in whitelist: {}", app_id_lc));
+                logger::debug(
+                    "SMTC-WHITELIST",
+                    &format!("app_id not in whitelist: {}", app_id_lc),
+                );
                 continue;
             }
         }
@@ -498,7 +751,19 @@ pub(crate) fn select_best_smtc_session(
     })
 }
 
-pub(crate) fn get_smtc_session() -> Option<windows::Media::Control::GlobalSystemMediaTransportControlsSession> {
+pub(crate) fn select_best_smtc_session() -> Option<(
+    windows::Media::Control::GlobalSystemMediaTransportControlsSession,
+    MediaInfo,
+    i64,
+    bool,
+    String,
+)> {
+    let manager = create_smtc_manager()?;
+    select_best_smtc_session_with_manager(&manager)
+}
+
+pub(crate) fn get_smtc_session(
+) -> Option<windows::Media::Control::GlobalSystemMediaTransportControlsSession> {
     select_best_smtc_session().map(|(session, _, _, _, _)| session)
 }
 
@@ -558,19 +823,25 @@ pub fn media_seek(position_ms: i64) -> Result<(), String> {
     Ok(())
 }
 
-pub(crate) fn get_smtc_media_info() -> Option<(u8, MediaInfo, i64, bool, String)> {
-
-
-    if let Some((session, media, position_ms, is_playing, app_id)) = select_best_smtc_session() {
-        let status = session.GetPlaybackInfo().ok().and_then(|info| info.PlaybackStatus().ok()).map(|s| match s {
-                PlaybackStatus::Playing  => 0,
-                PlaybackStatus::Paused   => 1,
-                PlaybackStatus::Stopped  => 2,
+pub(crate) fn get_smtc_media_info_with_manager(
+    manager: &MediaSessionManager,
+) -> Option<(u8, MediaInfo, i64, bool, String)> {
+    if let Some((session, media, position_ms, is_playing, app_id)) =
+        select_best_smtc_session_with_manager(manager)
+    {
+        let status = session
+            .GetPlaybackInfo()
+            .ok()
+            .and_then(|info| info.PlaybackStatus().ok())
+            .map(|s| match s {
+                PlaybackStatus::Playing => 0,
+                PlaybackStatus::Paused => 1,
+                PlaybackStatus::Stopped => 2,
                 PlaybackStatus::Changing => 3,
-                PlaybackStatus::Closed   => 4,
-                PlaybackStatus::Opened   => 5,
+                PlaybackStatus::Closed => 4,
+                PlaybackStatus::Opened => 5,
                 _ => 6,
-        });
+            });
         //println!("app_id: {} position_ms: {}", app_id, position_ms);
         let is_preferred = is_preferred_music_app(&app_id);
         if is_preferred {
@@ -591,16 +862,13 @@ pub(crate) fn get_smtc_thumbnail() -> Option<String> {
 
 /// 获取系统默认音频输出设备的音量 (0.0 ~ 1.0)
 fn get_system_volume_internal() -> Result<f32, String> {
-    use windows::Win32::Media::Audio::{
-        eRender, eConsole,
-        IMMDeviceEnumerator, MMDeviceEnumerator,
-    };
     use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
-    use windows::Win32::System::Com::{
-        CoInitializeEx, CoCreateInstance,
-        CLSCTX_ALL, COINIT_MULTITHREADED,
+    use windows::Win32::Media::Audio::{
+        eConsole, eRender, IMMDeviceEnumerator, MMDeviceEnumerator,
     };
-
+    use windows::Win32::System::Com::{
+        CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED,
+    };
 
     unsafe {
         let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
@@ -622,16 +890,14 @@ fn get_system_volume_internal() -> Result<f32, String> {
 
 /// 设置系统默认音频输出设备的音量 (0.0 ~ 1.0)
 fn set_system_volume_internal(vol: f32) -> Result<(), String> {
-    use windows::Win32::Media::Audio::{
-        eRender, eConsole,
-        IMMDeviceEnumerator, MMDeviceEnumerator,
-    };
-    use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
-    use windows::Win32::System::Com::{
-        CoInitializeEx, CoCreateInstance,
-        CLSCTX_ALL, COINIT_MULTITHREADED,
-    };
     use windows::core::GUID;
+    use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
+    use windows::Win32::Media::Audio::{
+        eConsole, eRender, IMMDeviceEnumerator, MMDeviceEnumerator,
+    };
+    use windows::Win32::System::Com::{
+        CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED,
+    };
 
     unsafe {
         let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
@@ -662,3 +928,39 @@ pub fn media_set_volume(volume: f32) -> Result<(), String> {
     set_system_volume_internal(volume)
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn playback_clock_advances_when_smtc_position_is_frozen() {
+        let start = Instant::now();
+        let mut clock = PlaybackPositionClock::default();
+        assert_eq!(clock.update_at("track-a", 0, true, start), 0);
+        assert_eq!(
+            clock.update_at("track-a", 0, true, start + Duration::from_millis(800)),
+            800
+        );
+        assert_eq!(
+            clock.update_at("track-a", 0, true, start + Duration::from_millis(1_600)),
+            1_600
+        );
+    }
+
+    #[test]
+    fn playback_clock_resyncs_on_reported_movement_and_track_change() {
+        let start = Instant::now();
+        let mut clock = PlaybackPositionClock::default();
+        clock.update_at("track-a", 0, true, start);
+        clock.update_at("track-a", 0, true, start + Duration::from_secs(2));
+        assert_eq!(
+            clock.update_at("track-a", 8_000, true, start + Duration::from_millis(2_080)),
+            8_000
+        );
+        assert_eq!(
+            clock.update_at("track-b", 0, true, start + Duration::from_millis(2_160)),
+            0
+        );
+    }
+}
