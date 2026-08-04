@@ -10,7 +10,7 @@
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D4?style=flat-square&logo=windows11&logoColor=white)
 [![License](https://img.shields.io/github/license/Lev1z/Wisland?style=flat-square)](LICENSE)
 
-**简体中文** · [English](README_EN.md)
+**简体中文** · [Eng](README_EN.md)
 </div>
 
 Wisland 常驻于屏幕顶部，用一枚克制的胶囊集中呈现 Codex 状态与额度、媒体信息、Obsidian 随手记和临时文件，并提供无需离开当前工作的快捷操作。

@@ -10,7 +10,7 @@ A lightweight Windows desktop island for Codex, music, and focused workflows.
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D4?style=flat-square&logo=windows11&logoColor=white)
 [![License](https://img.shields.io/github/license/Lev1z/Wisland?style=flat-square)](LICENSE)
 
-[简体中文](README.md) · **English**
+[简体中文](README.md) · **Eng**
 </div>
 
 Wisland stays at the top of your screen and presents Codex status and quota, media information, Obsidian notes, and temporary files in one restrained capsule, keeping frequent actions close without interrupting your work.
