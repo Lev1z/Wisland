@@ -52,6 +52,8 @@ const dimensions = {
   "--tray-collapsed-w": 190,
   "--expanded-w": 330,
   "--expanded-h": 74,
+  "--environment-check-collapsed-w": 280,
+  "--environment-check-expanded-w": 390,
   "--left-slot-size": 20,
   "--right-slot-size": 20,
   "--custom-slot-size": 28,

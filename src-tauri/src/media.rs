@@ -1,4 +1,5 @@
 use crate::logger;
+use serde::Serialize;
 use std::sync::{Mutex, OnceLock};
 use std::time::Instant;
 use windows::Media::Control::GlobalSystemMediaTransportControlsSessionManager as MediaSessionManager;
@@ -652,6 +653,122 @@ pub(crate) fn create_smtc_manager() -> Option<MediaSessionManager> {
     MediaSessionManager::RequestAsync().ok()?.get().ok()
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SmtcSessionSummary {
+    app_id: String,
+    app_name: String,
+    title: String,
+    artist: String,
+    playback_status: String,
+    preferred: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SmtcProbeResult {
+    sessions: Vec<SmtcSessionSummary>,
+    hint: String,
+}
+
+fn smtc_app_name(app_id: &str) -> String {
+    let id = app_id.to_ascii_lowercase();
+    if id.contains("cloudmusic") || id.contains("music.163") {
+        "网易云音乐".to_string()
+    } else if id.contains("qqmusic") {
+        "QQ 音乐".to_string()
+    } else if id.contains("spotify") {
+        "Spotify".to_string()
+    } else if id.contains("zunemusic") || id.contains("microsoft.windows.media") {
+        "Windows Media Player".to_string()
+    } else {
+        app_id
+            .rsplit(['!', '\\', '/'])
+            .next()
+            .unwrap_or(app_id)
+            .to_string()
+    }
+}
+
+#[tauri::command]
+pub fn probe_smtc_sessions() -> SmtcProbeResult {
+    let Some(manager) = create_smtc_manager() else {
+        return SmtcProbeResult {
+            sessions: Vec::new(),
+            hint: "无法连接 Windows 系统媒体控制（SMTC）".to_string(),
+        };
+    };
+    let Some(collection) = manager.GetSessions().ok() else {
+        return SmtcProbeResult {
+            sessions: Vec::new(),
+            hint: "Windows 未返回媒体会话".to_string(),
+        };
+    };
+    let size = collection.Size().unwrap_or_default();
+    let mut sessions = Vec::new();
+    for index in 0..size {
+        let Ok(session) = collection.GetAt(index) else {
+            continue;
+        };
+        let app_id = session
+            .SourceAppUserModelId()
+            .ok()
+            .map(|value| value.to_string_lossy())
+            .unwrap_or_default();
+        if app_id.trim().is_empty() {
+            continue;
+        }
+        let playback_status = session
+            .GetPlaybackInfo()
+            .ok()
+            .and_then(|info| info.PlaybackStatus().ok())
+            .map(|status| match status {
+                PlaybackStatus::Playing => "正在播放",
+                PlaybackStatus::Paused => "已暂停",
+                PlaybackStatus::Stopped => "已停止",
+                PlaybackStatus::Changing => "正在切换",
+                PlaybackStatus::Closed => "已关闭",
+                PlaybackStatus::Opened => "已打开",
+                _ => "未知",
+            })
+            .unwrap_or("未知")
+            .to_string();
+        let properties = session
+            .TryGetMediaPropertiesAsync()
+            .ok()
+            .and_then(|op| op.get().ok());
+        let title = properties
+            .as_ref()
+            .and_then(|value| value.Title().ok())
+            .map(|value| value.to_string_lossy())
+            .unwrap_or_default();
+        let artist = properties
+            .as_ref()
+            .and_then(|value| value.Artist().ok())
+            .map(|value| value.to_string_lossy())
+            .unwrap_or_default();
+        sessions.push(SmtcSessionSummary {
+            app_name: smtc_app_name(&app_id),
+            preferred: is_preferred_music_app(&app_id),
+            app_id,
+            title,
+            artist,
+            playback_status,
+        });
+    }
+    let hint = if sessions.is_empty() {
+        "未发现播放器。网易云音乐请在设置 → 系统设置中开启系统媒体控制（SMTC）后重试。"
+    } else if sessions.iter().any(|session| session.preferred) {
+        "已发现 Wisland 可识别的音乐播放器。"
+    } else {
+        "发现了媒体会话，但没有命中音乐播放器；可在设置中检查 SMTC 白名单。"
+    };
+    SmtcProbeResult {
+        sessions,
+        hint: hint.to_string(),
+    }
+}
+
 fn select_best_smtc_session_with_manager(
     session_manager: &MediaSessionManager,
 ) -> Option<(
@@ -962,5 +1079,12 @@ mod tests {
             clock.update_at("track-b", 0, true, start + Duration::from_millis(2_160)),
             0
         );
+    }
+
+    #[test]
+    fn netease_smtc_ids_are_recognized_and_named() {
+        assert!(is_preferred_music_app("cloudmusic.exe"));
+        assert!(is_preferred_music_app("music.163.com!player"));
+        assert_eq!(smtc_app_name("cloudmusic.exe"), "网易云音乐");
     }
 }

@@ -78,6 +78,7 @@ const obsidianDailyNotesDir = element<HTMLInputElement>("obsidian-daily-notes-di
 const codexHookState = element<HTMLElement>("codex-hook-state");
 const installCodexHooks = element<HTMLButtonElement>("install-codex-hooks");
 const clearCodexStatus = element<HTMLButtonElement>("clear-codex-status");
+const runEnvironmentCheck = element<HTMLButtonElement>("run-environment-check");
 const navItems = Array.from(document.querySelectorAll<HTMLButtonElement>(".nav-item"));
 
 let iconOrder: ViewId[] = ["time", "lyric", "journal", "tray"];
@@ -428,6 +429,11 @@ function activatePage(page: string, button: HTMLButtonElement): void {
   contentBody.scrollTo({ top: 0, behavior: "smooth" });
 }
 
+function activatePageById(page: string): void {
+  const button = navItems.find((item) => item.dataset.page === page);
+  if (button) activatePage(page, button);
+}
+
 async function persistSettings(): Promise<void> {
   showStatus("正在应用…", false, 0);
   try {
@@ -573,6 +579,17 @@ borderFile.addEventListener("change", async () => {
 });
 
 element<HTMLButtonElement>("open-log-dir").addEventListener("click", () => void invoke("open_log_dir"));
+runEnvironmentCheck.addEventListener("click", async () => {
+  runEnvironmentCheck.disabled = true;
+  try {
+    await invoke("start_environment_check");
+    showStatus("环境检查已在胶囊中启动", false, 3000);
+  } catch (error) {
+    showStatus(String(error), true, 4000);
+  } finally {
+    runEnvironmentCheck.disabled = false;
+  }
+});
 element<HTMLButtonElement>("open-github-profile").addEventListener("click", async () => {
   try {
     await invoke("open_github_profile");
@@ -660,6 +677,9 @@ element<HTMLButtonElement>("window-maximize").addEventListener("click", () => vo
 element<HTMLButtonElement>("window-close").addEventListener("click", () => void settingsWindow.close());
 
 void listen("settings-menu-open", playMenuIntro);
+void listen<string>("settings-page-open", (event) => activatePageById(event.payload));
+const initialPage = new URLSearchParams(window.location.search).get("page");
+if (initialPage) activatePageById(initialPage);
 playMenuIntro();
 initLyricOffset();
 void loadSettings();

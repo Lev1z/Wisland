@@ -9,6 +9,7 @@ export function initCapsuleInteraction(): void {
   });
 
   capsule.addEventListener("dblclick", (event) => {
+    if (capsule.classList.contains("environment-check")) return;
     const target = event.target as HTMLElement;
     if (target.closest("button, textarea, #notice-area, .view-dot, .progress-bar, .mp-progress-bar, .mp-volume-bar")) return;
     event.stopPropagation();

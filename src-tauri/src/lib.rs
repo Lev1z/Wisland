@@ -1,6 +1,7 @@
 mod agent_status;
 mod cc;
 mod codex_usage;
+mod environment_check;
 pub mod logger;
 mod lyrics;
 mod media;
@@ -9,7 +10,7 @@ mod privacy;
 pub mod settings;
 mod window;
 
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -31,6 +32,9 @@ pub(crate) const CAPSULE_JOURNAL_W: f64 = 250.0; // CSS --journal-collapsed-w
 pub(crate) const CAPSULE_TRAY_W: f64 = 190.0; // CSS view-tray
 pub(crate) const CAPSULE_EXPANDED_W: f64 = 330.0; // CSS --expanded-w
 pub(crate) const CAPSULE_EXPANDED_H: f64 = 74.0; // CSS --expanded-h
+pub(crate) const ENVIRONMENT_CHECK_COLLAPSED_W: f64 = 280.0;
+pub(crate) const ENVIRONMENT_CHECK_EXPANDED_W: f64 = 390.0;
+pub(crate) const ENVIRONMENT_CHECK_EXPANDED_H: f64 = 500.0;
 pub(crate) const CAPSULE_TOP_PAD: f64 = 5.0; // body padding-top
 
 pub(crate) const WIN_H_DEFAULT: f64 = 84.0; // CAPSULE_EXPANDED_H + padding
@@ -55,7 +59,8 @@ pub fn run() {
             window::get_is_expanded, window::toggle_capsule_pin,
             window::sync_window_height, window::sync_window_size, window::set_minimized, window::show_context_menu,
             window::set_music_expanded,
-            settings::open_settings, settings::get_settings, settings::set_core_preferences,
+            settings::open_settings, settings::open_settings_page,
+            settings::get_settings, settings::set_core_preferences,
             settings::open_github_profile,
             settings::set_appearance_preferences,
             settings::get_lyric_offset_players, settings::set_lyric_offset_enabled,
@@ -64,6 +69,14 @@ pub fn run() {
             agent_status::get_codex_status, agent_status::clear_codex_status,
             agent_status::install_codex_status_hooks,
             codex_usage::get_codex_quota,
+            codex_usage::check_codex_quota, codex_usage::get_codex_cli_status,
+            codex_usage::install_codex_cli, codex_usage::start_codex_login,
+            codex_usage::open_nodejs_download,
+            environment_check::get_environment_platform_status,
+            environment_check::get_environment_check_active,
+            environment_check::sync_environment_check_height,
+            environment_check::start_environment_check,
+            environment_check::complete_environment_check,
             obsidian::append_obsidian_note, obsidian::append_obsidian_entry,
             obsidian::get_obsidian_todos, obsidian::get_obsidian_entries,
             obsidian::set_obsidian_todo_completed, obsidian::delete_obsidian_entry,
@@ -72,6 +85,7 @@ pub fn run() {
             media::media_seek,
             media::media_volume_up, media::media_volume_down,
             media::media_get_volume, media::media_set_volume,
+            media::probe_smtc_sessions,
             settings::get_auto_start, settings::set_auto_start,
             settings::get_blacklist, settings::save_blacklist,
             settings::get_blacklist_enabled, settings::set_blacklist_enabled,
@@ -106,6 +120,14 @@ pub fn run() {
 
             // 从文件加载设置
             let settings = settings::load_settings_from_file();
+            let environment_check_active = Arc::new(AtomicBool::new(
+                settings.environment_check_version
+                    < environment_check::CURRENT_ENVIRONMENT_CHECK_VERSION,
+            ));
+            let environment_check_version = Arc::new(AtomicU32::new(settings.environment_check_version));
+            let environment_check_expanded_height = Arc::new(AtomicU64::new(
+                (ENVIRONMENT_CHECK_EXPANDED_H * settings.capsule_scale).to_bits(),
+            ));
             logger::set_level(&settings.log_level);
             let lyric_mode = Arc::new(Mutex::new(settings.lyric_mode.clone()));
             let lyric_offset_enabled = Arc::new(AtomicBool::new(settings.lyric_offset_enabled));
@@ -190,6 +212,9 @@ pub fn run() {
                 cc_routes: cc_routes.clone(),
                 obsidian_vault_path: obsidian_vault_path.clone(),
                 obsidian_daily_notes_dir: obsidian_daily_notes_dir.clone(),
+                environment_check_active: environment_check_active.clone(),
+                environment_check_version: environment_check_version.clone(),
+                environment_check_expanded_height: environment_check_expanded_height.clone(),
             });
 
             // --- 系统托盘 ---
@@ -228,6 +253,8 @@ pub fn run() {
             let capsule_scale_m = capsule_scale.clone();
             let hwnd_raw = hwnd.0 as usize;
             let is_music_m = is_music.clone();
+            let environment_check_m = environment_check_active.clone();
+            let environment_check_height_m = environment_check_expanded_height.clone();
 
             thread::spawn(move || {
                 let hwnd = HWND(hwnd_raw as *mut _);
@@ -249,11 +276,20 @@ pub fn run() {
                             let win_h = (rect.bottom - rect.top) as f64 / scale;
 
                             let minimized = is_minimized_m.load(Ordering::Relaxed);
+                            let checking_environment = environment_check_m.load(Ordering::Relaxed);
+                            let environment_height = f64::from_bits(
+                                environment_check_height_m.load(Ordering::Relaxed),
+                            )
+                            .clamp(360.0, 640.0);
                             let (cw, ch, radius) = if minimized {
                                 (MINIMIZED_W, MINIMIZED_H, MINIMIZED_H / 2.0)
                             } else if music_exp && view == "lyric" {
                                 // 音乐大面板：占满窗口
                                 (win_w, win_h, 28.0)
+                            } else if checking_environment && expanded {
+                                (ENVIRONMENT_CHECK_EXPANDED_W, ENVIRONMENT_CHECK_EXPANDED_H, 28.0)
+                            } else if checking_environment {
+                                (ENVIRONMENT_CHECK_COLLAPSED_W, CAPSULE_COLLAPSED_H, CAPSULE_COLLAPSED_H / 2.0)
                             } else if expanded {
                                 (CAPSULE_EXPANDED_W, CAPSULE_EXPANDED_H, 28.0)
                             } else if view == "lyric" && is_music_m.load(Ordering::Relaxed) && lyric_mode != "off" {
@@ -270,6 +306,8 @@ pub fn run() {
                             };
                             let (cw, ch, radius) = if minimized || music_exp {
                                 (cw, ch, radius)
+                            } else if checking_environment && expanded {
+                                (cw * appearance_scale, environment_height, radius * appearance_scale)
                             } else {
                                 (cw * appearance_scale, ch * appearance_scale, radius * appearance_scale)
                             };
@@ -310,7 +348,13 @@ pub fn run() {
 
                             if on_capsule && !suppress_expand_m.load(Ordering::Relaxed) && !exp_m.load(Ordering::Relaxed) {
                                 let gen = expand_anim_id_m.fetch_add(1, Ordering::Relaxed) + 1;
-                                let expanded_window_h = CAPSULE_EXPANDED_H * appearance_scale + 10.0;
+                                let expanded_window_h = if environment_check_m.load(Ordering::Relaxed) {
+                                    f64::from_bits(environment_check_height_m.load(Ordering::Relaxed))
+                                        .clamp(360.0, 640.0)
+                                        + 10.0
+                                } else {
+                                    CAPSULE_EXPANDED_H * appearance_scale + 10.0
+                                };
                                 window::stage_capsule_window_height(
                                     hwnd,
                                     scale,
@@ -947,4 +991,7 @@ pub struct IslandState {
     pub cc_routes: Arc<Mutex<Vec<cc::CcRoute>>>,
     pub obsidian_vault_path: Arc<Mutex<String>>,
     pub obsidian_daily_notes_dir: Arc<Mutex<String>>,
+    pub environment_check_active: Arc<AtomicBool>,
+    pub environment_check_version: Arc<AtomicU32>,
+    pub environment_check_expanded_height: Arc<AtomicU64>,
 }

@@ -8,6 +8,14 @@ function required<T extends Element>(id: string): T {
 
 export const capsule = required<HTMLDivElement>("island-capsule");
 export const currentViewContainer = required<HTMLDivElement>("current-view");
+export const environmentCheckArea = required<HTMLElement>("environment-check-area");
+export const environmentCheckFull = required<HTMLDivElement>("environment-check-full");
+export const environmentCheckList = required<HTMLDivElement>("environment-check-list");
+export const environmentCheckCompact = required<HTMLDivElement>("environment-check-compact");
+export const environmentCompactIcon = required<HTMLSpanElement>("environment-compact-icon");
+export const environmentCompactText = required<HTMLSpanElement>("environment-compact-text");
+export const environmentRefresh = required<HTMLButtonElement>("environment-refresh");
+export const environmentSkip = required<HTMLButtonElement>("environment-skip");
 export const viewHolder = required<HTMLDivElement>("view-holder");
 export const timeWrapper = required<HTMLDivElement>("time-wrapper");
 export const timeText = required<HTMLDivElement>("time-text");

@@ -220,6 +220,10 @@ function animateViewSwitch(from: ViewMode, to: ViewMode): void {
 }
 
 export function updateCapsuleSize(): void {
+  if (capsule.classList.contains("environment-check")) {
+    capsule.classList.remove("lyric-collapsed", "music-expanded");
+    return;
+  }
   if (capsule.classList.contains("expanded")) {
     capsule.classList.remove("lyric-collapsed", "music-expanded");
     return;
@@ -307,6 +311,7 @@ export function initViewSwitcher(): void {
   }, { passive: false });
   let lastWheelAt = 0;
   capsule.addEventListener("wheel", (event) => {
+    if (capsule.classList.contains("environment-check")) return;
     if (capsule.classList.contains("notice-active") || capsule.classList.contains("privacy-active")) return;
     const target = event.target instanceof Element ? event.target : null;
     const textarea = target?.closest("textarea");

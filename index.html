@@ -9,8 +9,22 @@
   <script type="module" src="/src/main.ts" defer></script>
 </head>
 <body>
-  <div id="island-capsule">
+  <div id="island-capsule" class="environment-state-pending">
     <div id="current-view"></div>
+    <section id="environment-check-area" aria-live="polite" hidden>
+      <div id="environment-check-compact">
+        <span id="environment-compact-icon" class="environment-status-icon checking" aria-hidden="true"></span>
+        <span id="environment-compact-text">正在准备环境检查…</span>
+      </div>
+      <div id="environment-check-full" aria-hidden="true">
+        <header>
+          <span><strong>环境检查</strong><small>确认 Wisland 的桌面集成状态</small></span>
+          <button id="environment-refresh" type="button" title="重新检查" aria-label="重新检查">↻</button>
+        </header>
+        <div id="environment-check-list"></div>
+        <button id="environment-skip" type="button">跳过</button>
+      </div>
+    </section>
     <div id="notice-area" class="overlay-popup"></div>
     <div id="file-drop-overlay" aria-hidden="true">
       <svg viewBox="0 0 24 24"><path d="M12 3v11m0-11 4 4m-4-4L8 7M5 13v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/></svg>

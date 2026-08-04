@@ -583,11 +583,7 @@ pub fn show_context_menu(app: tauri::AppHandle, window: tauri::WebviewWindow) {
             let _ = app.emit("context-menu-action", "minimize");
         }
         2 => {
-            thread::spawn(move || {
-                // 短暂延迟确保主线程 command 调用完全返回
-                thread::sleep(Duration::from_millis(50));
-                crate::settings::open_settings(app);
-            });
+            crate::settings::open_settings(app);
         }
         _ => {}
     }

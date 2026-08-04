@@ -95,6 +95,8 @@ fn source_exists(source: &str, assets: &[CustomAsset]) -> bool {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct SettingsData {
+    #[serde(default)]
+    pub environment_check_version: u32,
     #[serde(default = "default_lyric_mode")]
     pub lyric_mode: String,
     #[serde(default = "default_lyric_offset_enabled")]
@@ -247,7 +249,7 @@ fn normalize_right_visual_mode(value: &str) -> String {
 }
 
 fn default_blacklist_enabled() -> bool {
-    true
+    false
 }
 
 fn default_blacklist_processes() -> Vec<String> {
@@ -317,6 +319,7 @@ fn default_cc_routes() -> Vec<CcRoute> {
 impl Default for SettingsData {
     fn default() -> Self {
         Self {
+            environment_check_version: 0,
             lyric_mode: default_lyric_mode(),
             lyric_offset_enabled: default_lyric_offset_enabled(),
             lyric_offsets_by_player: HashMap::new(),
@@ -433,6 +436,7 @@ pub(crate) fn save_settings_to_file(data: &SettingsData) -> Result<(), String> {
 
 pub(crate) fn build_settings_data(state: &IslandState) -> SettingsData {
     SettingsData {
+        environment_check_version: state.environment_check_version.load(Ordering::Relaxed),
         lyric_mode: state.lyric_mode.lock().unwrap().clone(),
         lyric_offset_enabled: state.lyric_offset_enabled.load(Ordering::Relaxed),
         lyric_offsets_by_player: state.lyric_offsets_by_player.lock().unwrap().clone(),
@@ -462,27 +466,38 @@ pub(crate) fn build_settings_data(state: &IslandState) -> SettingsData {
     }
 }
 
-#[tauri::command]
-pub fn open_settings(app: tauri::AppHandle) {
+fn settings_page(page: Option<String>) -> Option<String> {
+    page.filter(|page| {
+        matches!(
+            page.as_str(),
+            "general" | "music" | "codex" | "obsidian" | "custom" | "behavior" | "about"
+        )
+    })
+}
+
+fn open_settings_window(app: tauri::AppHandle, page: Option<String>) {
     if let Some(window) = app.get_webview_window("settings") {
         let _ = window.show();
         let _ = window.set_focus();
         let _ = window.emit("settings-menu-open", ());
+        if let Some(page) = page {
+            let _ = window.emit("settings-page-open", page);
+        }
         return;
     }
 
-    let builder = tauri::WebviewWindowBuilder::new(
-        &app,
-        "settings",
-        tauri::WebviewUrl::App("settings.html".into()),
-    )
-    .title("Wisland 设置")
-    .inner_size(960.0, 620.0)
-    .min_inner_size(760.0, 500.0)
-    .background_color(tauri::window::Color(13, 13, 13, 255))
-    .decorations(false)
-    .resizable(true)
-    .center();
+    let url = page
+        .map(|page| format!("settings.html?page={page}"))
+        .unwrap_or_else(|| "settings.html".to_string());
+    let builder =
+        tauri::WebviewWindowBuilder::new(&app, "settings", tauri::WebviewUrl::App(url.into()))
+            .title("Wisland 设置")
+            .inner_size(960.0, 620.0)
+            .min_inner_size(760.0, 500.0)
+            .background_color(tauri::window::Color(13, 13, 13, 255))
+            .decorations(false)
+            .resizable(true)
+            .center();
 
     let result = tauri::image::Image::from_bytes(include_bytes!("../icons/icon.png"))
         .and_then(|icon| builder.icon(icon))
@@ -490,6 +505,25 @@ pub fn open_settings(app: tauri::AppHandle) {
     if let Err(error) = result {
         crate::logger::error("Settings", &format!("无法打开设置窗口：{error}"));
     }
+}
+
+fn schedule_settings_window(app: tauri::AppHandle, page: Option<String>) {
+    std::thread::spawn(move || {
+        // 创建第二个 WebView2 必须等当前 IPC / 菜单回调完全返回，
+        // 否则 Windows 上可能只出现一个无响应的黑色窗口。
+        std::thread::sleep(std::time::Duration::from_millis(60));
+        open_settings_window(app, page);
+    });
+}
+
+#[tauri::command]
+pub fn open_settings(app: tauri::AppHandle) {
+    schedule_settings_window(app, None);
+}
+
+#[tauri::command]
+pub fn open_settings_page(app: tauri::AppHandle, page: String) {
+    schedule_settings_window(app, settings_page(Some(page)));
 }
 
 #[tauri::command]
@@ -505,6 +539,9 @@ pub fn open_github_profile() -> Result<(), String> {
 pub fn get_settings(state: tauri::State<'_, IslandState>) -> serde_json::Value {
     serde_json::json!({
         "lyric_mode": state.lyric_mode.lock().unwrap().clone(),
+        "environment_check_version": state.environment_check_version.load(Ordering::Relaxed),
+        "environment_check_completed": state.environment_check_version.load(Ordering::Relaxed)
+            >= crate::environment_check::CURRENT_ENVIRONMENT_CHECK_VERSION,
         "lyric_offset_enabled": state.lyric_offset_enabled.load(Ordering::Relaxed),
         "indicator_color": state.indicator_color.lock().unwrap().clone(),
         "capsule_opacity": *state.capsule_opacity.lock().unwrap(),
@@ -847,7 +884,7 @@ pub fn save_blacklist(
 mod tests {
     use super::{
         normalize_border_effect, normalize_custom_assets, normalize_icon_bar_order,
-        normalize_icon_bar_style, source_exists, CustomAsset, SettingsData,
+        normalize_icon_bar_style, settings_page, source_exists, CustomAsset, SettingsData,
     };
 
     #[test]
@@ -893,5 +930,22 @@ mod tests {
         assert_eq!(normalize_border_effect("klein"), "off");
         assert!(source_exists("builtin:cat-wave", &[]));
         assert!(source_exists("builtin:dog-wave", &[]));
+    }
+
+    #[test]
+    fn environment_check_and_blacklist_have_safe_defaults() {
+        let legacy: SettingsData = serde_json::from_str(r#"{"capsule_scale":1.0}"#).unwrap();
+        assert_eq!(legacy.environment_check_version, 0);
+        assert_eq!(SettingsData::default().environment_check_version, 0);
+        assert!(!SettingsData::default().blacklist_enabled);
+    }
+
+    #[test]
+    fn settings_window_accepts_only_known_pages() {
+        assert_eq!(
+            settings_page(Some("obsidian".into())).as_deref(),
+            Some("obsidian")
+        );
+        assert_eq!(settings_page(Some("unknown".into())), None);
     }
 }

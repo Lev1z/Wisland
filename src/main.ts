@@ -14,8 +14,10 @@ import { initCapsuleExpansion } from "./modules/capsule-expansion";
 import { initCodexQuota } from "./modules/codex-quota";
 import { initFileTray } from "./modules/file-tray";
 import { initAppearance } from "./modules/appearance";
+import { initEnvironmentCheck } from "./modules/environment-check";
 
 initAppearance();
+initEnvironmentCheck();
 initClock();
 initNoticeQueue();
 initCodexStatus();

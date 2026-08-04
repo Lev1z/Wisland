@@ -77,7 +77,7 @@ fn is_codex_desktop_executable(path: &str) -> bool {
 }
 
 #[cfg(windows)]
-fn codex_desktop_running() -> bool {
+pub(crate) fn codex_desktop_running() -> bool {
     unsafe {
         let Ok(snapshot) = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) else {
             return false;
@@ -130,8 +130,37 @@ fn codex_desktop_running() -> bool {
 }
 
 #[cfg(not(windows))]
-fn codex_desktop_running() -> bool {
+pub(crate) fn codex_desktop_running() -> bool {
     true
+}
+
+pub(crate) fn codex_desktop_installed() -> bool {
+    if codex_desktop_running() {
+        return true;
+    }
+    dirs::data_local_dir()
+        .map(|directory| directory.join("Packages"))
+        .and_then(|directory| fs::read_dir(directory).ok())
+        .is_some_and(|entries| {
+            entries.flatten().any(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .to_ascii_lowercase()
+                    .starts_with("openai.codex_")
+            })
+        })
+}
+
+pub(crate) fn codex_status_hooks_installed() -> bool {
+    let config = dirs::home_dir()
+        .map(|directory| directory.join(".codex").join("config.toml"))
+        .and_then(|path| fs::read_to_string(path).ok())
+        .unwrap_or_default();
+    config.contains(MANAGED_BEGIN)
+        && config.contains(MANAGED_END)
+        && data_dir().join(RUNNING_SCRIPT_NAME).is_file()
+        && data_dir().join(STATUS_SCRIPT_NAME).is_file()
 }
 
 fn visible_running(now: u64) -> bool {

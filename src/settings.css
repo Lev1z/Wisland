@@ -168,6 +168,7 @@ input[type="range"]::-webkit-slider-thumb { appearance: none; width: 15px; heigh
 .setting-hint { margin: 9px 18px 17px; color: var(--muted); font-size: var(--text-secondary); line-height: 1.55; }
 .setting-hint.standalone { margin-top: 14px; }
 .button-row { display: flex; gap: 9px; padding: 16px 18px 4px; }
+.setting-group > .button-row:last-child { padding-bottom: 16px; }
 .primary-button, .secondary-button, .btn { border: 0; border-radius: 8px; padding: 9px 15px; cursor: pointer; font-weight: 620; transition: transform .15s, background .18s; }
 .primary-button { color: #fff; background: var(--accent); }
 .primary-button:hover { background: #4d38df; transform: translateY(-1px); }
