@@ -36,7 +36,7 @@
         <button class="nav-item" data-page="behavior"><span class="nav-index">06</span><span class="nav-label">行为</span></button>
         <button class="nav-item" data-page="about"><span class="nav-index">07</span><span class="nav-label">关于</span></button>
       </nav>
-      <div class="sidebar-foot"><span>PERSONAL DESKTOP LAYER</span><b>0.1.3</b></div>
+      <div class="sidebar-foot"><span>PERSONAL DESKTOP LAYER</span><b>0.1.2</b></div>
     </aside>
 
     <section class="content">
@@ -101,14 +101,10 @@
           <div class="setting-group">
             <h3>SMTC 来源</h3>
             <label class="setting-row">
-              <span><strong>播放器白名单</strong><small>开启后仅使用列表中的 SMTC 标识，也可借此放行尚未内置支持的播放器。</small></span>
+              <span><strong>播放器白名单</strong><small>每行一个 SMTC 应用标识；关闭时不限制播放器。</small></span>
               <input id="smtc-whitelist-enabled" type="checkbox" class="toggle autosave" />
             </label>
             <textarea id="smtc-whitelist" class="autosave" rows="6" placeholder="cloudmusic.exe&#10;qqmusic.exe"></textarea>
-            <div class="button-row diagnostics-actions">
-              <button id="scan-smtc" class="secondary-button compact" type="button">扫描 SMTC 会话</button>
-            </div>
-            <div id="smtc-scan-result" class="diagnostics-result"><span>播放音乐后扫描，可查看播放器实际暴露的应用标识。</span></div>
           </div>
         </section>
 
@@ -124,17 +120,6 @@
               <button id="clear-codex-status" class="secondary-button compact" type="button">清除状态</button>
             </div>
             <p class="setting-hint">只维护 ~/.codex/config.toml 中标记为 Wisland 的区块，不覆盖其他 Codex 设置。安装后需要重启 Codex。</p>
-          </div>
-          <div class="setting-group">
-            <h3>本机连接</h3>
-            <div class="setting-row static-row">
-              <span><strong>Codex 额度服务</strong><small id="codex-quota-detail">尚未检测。可直接复用 Codex Desktop，无需安装 npm。</small></span>
-              <span id="codex-quota-state" class="status-pill">未检测</span>
-            </div>
-            <div class="button-row">
-              <button id="check-codex-quota" class="primary-button" type="button">连接并验证额度</button>
-              <button id="open-onboarding" class="secondary-button compact" type="button">重新运行启动检查</button>
-            </div>
           </div>
         </section>
 
@@ -202,7 +187,7 @@
 
         <section class="page" id="page-about">
           <div class="empty-state">
-            <img class="brand-mark large" src="/src/assets/wisland-icon.png" alt="" /><h3>Wisland 0.1.3</h3>
+            <img class="brand-mark large" src="/src/assets/wisland-icon.png" alt="" /><h3>Wisland 0.1.2</h3>
             <button id="open-github-profile" class="github-profile-link" type="button" aria-label="打开 Lev1z 的 GitHub 主页">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 .7a11.5 11.5 0 0 0-3.64 22.41c.58.11.79-.25.79-.56v-2.23c-3.22.7-3.9-1.37-3.9-1.37-.53-1.34-1.29-1.7-1.29-1.7-1.05-.72.08-.71.08-.71 1.16.08 1.78 1.2 1.78 1.2 1.04 1.77 2.72 1.26 3.38.96.1-.75.4-1.26.74-1.55-2.57-.29-5.27-1.28-5.27-5.69 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.16 1.18a10.9 10.9 0 0 1 5.76 0c2.19-1.49 3.16-1.18 3.16-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.42-2.71 5.39-5.29 5.68.42.36.79 1.06.79 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .7Z"/></svg>
               <span>github.com/Lev1z</span>

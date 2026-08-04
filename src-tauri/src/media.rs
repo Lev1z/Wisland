@@ -1,5 +1,4 @@
 use crate::logger;
-use serde::Serialize;
 use std::sync::{Mutex, OnceLock};
 use std::time::Instant;
 use windows::Media::Control::GlobalSystemMediaTransportControlsSessionManager as MediaSessionManager;
@@ -172,18 +171,14 @@ pub(crate) fn is_preferred_music_app(app_id: &str) -> bool {
     let id = app_id.to_ascii_lowercase();
     [
         // —— 国内音乐平台 ——
-        "cloudmusic",                               // 网易云音乐
-        "music.163",                                // 网易云音乐（UWP / 网页版 PWA）
-        "orpheus",                                  // 网易云音乐（旧版进程 / SMTC 标识）
-        "netease.cloudmusic",                       // 网易云音乐（商店版）
-        "com.netease.cloudmusic",                   // 网易云音乐（兼容标识）
-        "\u{7f51}\u{6613}\u{4e91}\u{97f3}\u{4e50}", // 网易云音乐（中文名）
-        "qqmusic",                                  // QQ 音乐
-        "kugou",                                    // 酷狗音乐
-        "kuwo",                                     // 酷我音乐
-        "qishui",                                   // 汽水音乐
-        "\u{6c7d}\u{6c34}\u{97f3}\u{4e50}",         // 汽水音乐（中文名）
-        "migu",                                     // 咪咕音乐
+        "cloudmusic",                       // 网易云音乐
+        "music.163",                        // 网易云音乐（UWP / 网页版 PWA）
+        "qqmusic",                          // QQ 音乐
+        "kugou",                            // 酷狗音乐
+        "kuwo",                             // 酷我音乐
+        "qishui",                           // 汽水音乐
+        "\u{6c7d}\u{6c34}\u{97f3}\u{4e50}", // 汽水音乐（中文名）
+        "migu",                             // 咪咕音乐
         // —— 国际音乐平台 ——
         "spotify",                                  // Spotify
         "itunes",                                   // Apple Music / iTunes
@@ -240,122 +235,6 @@ fn is_browser_or_video_app(app_id: &str) -> bool {
     ]
     .iter()
     .any(|k| id.contains(k))
-}
-
-fn whitelist_matches(app_id: &str, whitelist: &SmtcWhitelist) -> bool {
-    !whitelist.app_ids.is_empty()
-        && whitelist
-            .app_ids
-            .iter()
-            .any(|allowed| app_id.contains(allowed))
-}
-
-/// 开启白名单时，以用户配置为最终规则；关闭时只接收内置音乐播放器。
-/// 这样既能避免浏览器视频抢占音乐胶囊，也允许用户放行尚未收录的播放器。
-fn session_allowed_for_display(app_id: &str, whitelist: &SmtcWhitelist) -> bool {
-    if whitelist.enabled {
-        return whitelist_matches(app_id, whitelist);
-    }
-    is_preferred_music_app(app_id) && !is_browser_or_video_app(app_id)
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SmtcSessionDiagnostic {
-    app_id: String,
-    title: String,
-    artist: String,
-    playback_status: String,
-    playing: bool,
-    preferred: bool,
-    whitelisted: bool,
-    eligible: bool,
-    readable: bool,
-}
-
-fn playback_status_name(status: PlaybackStatus) -> &'static str {
-    match status {
-        PlaybackStatus::Playing => "playing",
-        PlaybackStatus::Paused => "paused",
-        PlaybackStatus::Stopped => "stopped",
-        PlaybackStatus::Changing => "changing",
-        PlaybackStatus::Closed => "closed",
-        PlaybackStatus::Opened => "opened",
-        _ => "unknown",
-    }
-}
-
-#[tauri::command]
-pub fn diagnose_smtc_sessions() -> Result<Vec<SmtcSessionDiagnostic>, String> {
-    let manager = MediaSessionManager::RequestAsync()
-        .map_err(|error| format!("无法请求 SMTC 管理器：{error}"))?
-        .get()
-        .map_err(|error| format!("无法连接 SMTC 管理器：{error}"))?;
-    let sessions = manager
-        .GetSessions()
-        .map_err(|error| format!("无法读取 SMTC 会话：{error}"))?;
-    let size = sessions
-        .Size()
-        .map_err(|error| format!("无法统计 SMTC 会话：{error}"))?;
-    let whitelist = get_smtc_whitelist();
-    let mut diagnostics = Vec::with_capacity(size as usize);
-
-    for index in 0..size {
-        let Ok(session) = sessions.GetAt(index) else {
-            continue;
-        };
-        let app_id = session
-            .SourceAppUserModelId()
-            .ok()
-            .map(|value| value.to_string_lossy())
-            .unwrap_or_default();
-        let normalized = app_id.trim().to_ascii_lowercase();
-        let playback_status = session
-            .GetPlaybackInfo()
-            .ok()
-            .and_then(|info| info.PlaybackStatus().ok());
-        let info = read_smtc_session_info(&session);
-        let (title, artist, playing, readable) = info
-            .map(|(media, _, playing)| (media.title, media.artist, playing, true))
-            .unwrap_or_else(|| (String::new(), String::new(), false, false));
-        let item = SmtcSessionDiagnostic {
-            app_id,
-            title,
-            artist,
-            playback_status: playback_status
-                .map(playback_status_name)
-                .unwrap_or("unavailable")
-                .to_string(),
-            playing,
-            preferred: is_preferred_music_app(&normalized),
-            whitelisted: whitelist_matches(&normalized, &whitelist),
-            eligible: !normalized.is_empty()
-                && session_allowed_for_display(&normalized, &whitelist),
-            readable,
-        };
-        logger::info(
-            "SMTC-Probe",
-            &format!(
-                "app_id='{}' status={} readable={} eligible={} title='{}' artist='{}'",
-                item.app_id,
-                item.playback_status,
-                item.readable,
-                item.eligible,
-                item.title,
-                item.artist
-            ),
-        );
-        diagnostics.push(item);
-    }
-
-    diagnostics.sort_by(|left, right| {
-        right
-            .eligible
-            .cmp(&left.eligible)
-            .then_with(|| right.playing.cmp(&left.playing))
-            .then_with(|| left.app_id.cmp(&right.app_id))
-    });
-    Ok(diagnostics)
 }
 
 /// 从 SMTC 媒体属性中提取封面图片并编码为 base64
@@ -807,6 +686,11 @@ fn select_best_smtc_session_with_manager(
             Ok(s) => s,
             Err(_) => continue,
         };
+        let (media, position_ms, is_playing) = match read_smtc_session_info(&session) {
+            Some(v) => v,
+            None => continue,
+        };
+
         let app_id = session
             .SourceAppUserModelId()
             .ok()
@@ -818,24 +702,16 @@ fn select_best_smtc_session_with_manager(
             continue;
         }
 
-        if !session_allowed_for_display(&app_id_lc, &whitelist) {
-            logger::debug(
-                "SMTC-SELECT",
-                &format!("app_id blocked by source policy: {}", app_id_lc),
-            );
-            continue;
-        }
-
-        let (media, position_ms, is_playing) = match read_smtc_session_info(&session) {
-            Some(v) => v,
-            None => continue,
-        };
-
-        if whitelist.enabled && !is_preferred_music_app(&app_id_lc) {
-            logger::info(
-                "SMTC-SELECT",
-                &format!("user whitelist accepted unknown player: {}", app_id_lc),
-            );
+        if whitelist.enabled {
+            let allowed = !whitelist.app_ids.is_empty()
+                && whitelist.app_ids.iter().any(|id| app_id_lc.contains(id));
+            if !allowed {
+                logger::debug(
+                    "SMTC-WHITELIST",
+                    &format!("app_id not in whitelist: {}", app_id_lc),
+                );
+                continue;
+            }
         }
 
         let has_meta = !media.title.trim().is_empty() || !media.artist.trim().is_empty();
@@ -966,7 +842,12 @@ pub(crate) fn get_smtc_media_info_with_manager(
                 PlaybackStatus::Opened => 5,
                 _ => 6,
             });
-        return Some((status?, media, position_ms, is_playing, app_id));
+        //println!("app_id: {} position_ms: {}", app_id, position_ms);
+        let is_preferred = is_preferred_music_app(&app_id);
+        if is_preferred {
+            return Some((status?, media, position_ms, is_playing, app_id));
+        }
+        return None;
     }
 
     None
@@ -1081,27 +962,5 @@ mod tests {
             clock.update_at("track-b", 0, true, start + Duration::from_millis(2_160)),
             0
         );
-    }
-
-    #[test]
-    fn default_policy_accepts_music_and_rejects_unknown_sources() {
-        let whitelist = SmtcWhitelist::default();
-        assert!(session_allowed_for_display("cloudmusic.exe", &whitelist));
-        assert!(session_allowed_for_display("orpheus.exe", &whitelist));
-        assert!(!session_allowed_for_display(
-            "unknown-player.exe",
-            &whitelist
-        ));
-        assert!(!session_allowed_for_display("chrome.exe", &whitelist));
-    }
-
-    #[test]
-    fn enabled_whitelist_overrides_the_builtin_player_list() {
-        let whitelist = SmtcWhitelist {
-            enabled: true,
-            app_ids: vec!["my-player".into()],
-        };
-        assert!(session_allowed_for_display("my-player.exe", &whitelist));
-        assert!(!session_allowed_for_display("cloudmusic.exe", &whitelist));
     }
 }

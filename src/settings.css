@@ -178,15 +178,6 @@ input[type="range"]::-webkit-slider-thumb { appearance: none; width: 15px; heigh
 button:disabled { opacity: .48; cursor: wait; transform: none !important; }
 .status-pill { flex: none !important; display: inline-flex !important; padding: 5px 9px; border: 1px solid #353b49; border-radius: 999px; color: #aab2c1; background: #252a34; font: 650 9px/1 Inter, sans-serif; letter-spacing: .06em; }
 .status-pill.blue { color: #c5beff; border-color: var(--accent); background: #292929; }
-.status-pill.success { color: #a9e9c7; border-color: #326046; background: #1c3327; }
-.status-pill.warning { color: #e8c97e; border-color: #64522c; background: #352c1d; }
-
-.diagnostics-actions { padding-bottom: 12px; }
-.diagnostics-result { margin: 0 18px 18px; padding: 11px 12px; border: 1px solid #303030; border-radius: 9px; display: grid; gap: 7px; color: #7f8797; background: #111; font-size: 11px; line-height: 1.5; }
-.diagnostic-session { padding: 8px 9px; border: 1px solid #303030; border-radius: 7px; display: grid; gap: 3px; color: #b9bfca; background: #1a1a1a; }
-.diagnostic-session strong { color: #edf0f6; font-size: 11px; overflow-wrap: anywhere; }
-.diagnostic-session small { color: #747c8c; overflow-wrap: anywhere; }
-.diagnostic-session.accepted { border-color: #355c47; }
 
 .order-list { padding: 0 12px 12px; display: grid; gap: 7px; }
 .order-row { min-height: 48px; padding: 8px 13px; display: flex; align-items: center; justify-content: space-between; border: 1px solid #333; border-radius: 9px; background: #111; cursor: grab; transition: border-color .16s, background .16s, opacity .16s; }

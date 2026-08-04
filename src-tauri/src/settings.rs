@@ -95,9 +95,6 @@ fn source_exists(source: &str, assets: &[CustomAsset]) -> bool {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct SettingsData {
-    // 旧版设置文件没有此字段，迁移时默认已完成，避免升级后突然弹出引导。
-    #[serde(default = "default_existing_onboarding_completed")]
-    pub onboarding_completed: bool,
     #[serde(default = "default_lyric_mode")]
     pub lyric_mode: String,
     #[serde(default = "default_lyric_offset_enabled")]
@@ -150,10 +147,6 @@ pub(crate) struct SettingsData {
     pub obsidian_daily_notes_dir: String,
     #[serde(default = "default_cc_routes")]
     pub cc: Vec<CcRoute>,
-}
-
-fn default_existing_onboarding_completed() -> bool {
-    true
 }
 
 fn default_lyric_mode() -> String {
@@ -324,7 +317,6 @@ fn default_cc_routes() -> Vec<CcRoute> {
 impl Default for SettingsData {
     fn default() -> Self {
         Self {
-            onboarding_completed: false,
             lyric_mode: default_lyric_mode(),
             lyric_offset_enabled: default_lyric_offset_enabled(),
             lyric_offsets_by_player: HashMap::new(),
@@ -441,7 +433,6 @@ pub(crate) fn save_settings_to_file(data: &SettingsData) -> Result<(), String> {
 
 pub(crate) fn build_settings_data(state: &IslandState) -> SettingsData {
     SettingsData {
-        onboarding_completed: state.onboarding_completed.load(Ordering::Relaxed),
         lyric_mode: state.lyric_mode.lock().unwrap().clone(),
         lyric_offset_enabled: state.lyric_offset_enabled.load(Ordering::Relaxed),
         lyric_offsets_by_player: state.lyric_offsets_by_player.lock().unwrap().clone(),
@@ -513,7 +504,6 @@ pub fn open_github_profile() -> Result<(), String> {
 #[tauri::command]
 pub fn get_settings(state: tauri::State<'_, IslandState>) -> serde_json::Value {
     serde_json::json!({
-        "onboarding_completed": state.onboarding_completed.load(Ordering::Relaxed),
         "lyric_mode": state.lyric_mode.lock().unwrap().clone(),
         "lyric_offset_enabled": state.lyric_offset_enabled.load(Ordering::Relaxed),
         "indicator_color": state.indicator_color.lock().unwrap().clone(),
@@ -903,12 +893,5 @@ mod tests {
         assert_eq!(normalize_border_effect("klein"), "off");
         assert!(source_exists("builtin:cat-wave", &[]));
         assert!(source_exists("builtin:dog-wave", &[]));
-    }
-
-    #[test]
-    fn onboarding_is_new_install_only() {
-        assert!(!SettingsData::default().onboarding_completed);
-        let migrated = serde_json::from_str::<SettingsData>("{}").unwrap();
-        assert!(migrated.onboarding_completed);
     }
 }
