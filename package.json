@@ -2,6 +2,12 @@
   "name": "wisland",
   "private": true,
   "version": "0.1.3",
+  "description": "A lightweight Windows desktop island for Codex, music, Obsidian, and focused workflows",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Lev1z/Wisland.git"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",

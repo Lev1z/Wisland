@@ -1,114 +1,157 @@
+<div align="center">
+  <img src="src/assets/wisland-icon.png" width="112" alt="Wisland 图标">
+
 # Wisland
 
-Wisland 是一个面向 Windows 的轻量桌面灵动岛。它常驻在屏幕顶部，用一枚尽量克制的胶囊集中展示 Codex、音乐、Obsidian 和临时文件等高频信息，同时保留快速操作入口。
+一枚为 Codex、音乐与专注工作流打造的 Windows 桌面灵动岛。
 
-项目参考 PyIsland 的视觉方向，并从 `tauri-island` 的公开代码演进而来；当前主线已围绕个人工作流完成精简和重构。
+[![Release](https://img.shields.io/github/v/release/Lev1z/Wisland?style=flat-square)](https://github.com/Lev1z/Wisland/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/Lev1z/Wisland/total?style=flat-square)](https://github.com/Lev1z/Wisland/releases)
+![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D4?style=flat-square&logo=windows11&logoColor=white)
+[![License](https://img.shields.io/github/license/Lev1z/Wisland?style=flat-square)](LICENSE)
+
+**简体中文** · [English](README_EN.md)
+</div>
+
+Wisland 常驻于屏幕顶部，用一枚克制的胶囊集中呈现 Codex 状态与额度、媒体信息、Obsidian 随手记和临时文件，并提供无需离开当前工作的快捷操作。
+
+<p align="center">
+  <img src="docs/assets/wisland-capsule.png" width="236" alt="Wisland 胶囊界面">
+</p>
+
+## 功能亮点
+
+- **Codex 状态与额度**：显示剩余额度；状态灯以绿色、橙色和灰色区分空闲、执行中与离线。
+- **音乐、歌词与控制**：读取 Windows SMTC 的歌曲、封面、进度与播放状态，支持播放控制、音量、专辑取色声波和歌词时间校准。
+- **Obsidian 随手记**：向指定 Vault 快速写入日记、待办和普通记录，并管理当天条目。
+- **临时文件托盘**：暂存拖入文件的路径，可再次拖出或打开，不复制和修改原文件。
+- **灵活导航与外观**：在 Classic 图标栏和 Option Wheel 之间切换，支持页面排序、缩放、透明度、边框以及图片或 GIF 素材。
+- **桌面行为**：支持中键锁定展开、拖动回弹、顶部最小化横条、全屏/进程黑名单、开机自启和系统托盘。
+- **环境检查**：首次启动时检查 WebView2、Codex Desktop、Codex CLI、Hooks、媒体服务和 Obsidian，并提供对应修复入口。
 
 ## 下载与安装
 
-前往 [GitHub Releases](https://github.com/Lev1z/Wisland/releases/latest) 下载最新的 `Wisland_<版本>_x64-setup.exe`，双击安装即可。当前仅支持 64 位 Windows 10/11；首次启动时 Wisland 会自动检查 WebView2、Codex CLI、媒体服务和 Obsidian 配置，并给出对应的修复入口。
+从 [GitHub Releases](https://github.com/Lev1z/Wisland/releases/latest) 下载最新的 `Wisland_<版本>_x64-setup.exe` 并运行。
 
-建议普通用户使用安装包，而不是直接运行构建目录中的裸 `Wisland.exe`，这样卸载、升级和开始菜单快捷方式都能正常工作。
+建议使用安装包，而不是单独复制构建目录中的 `Wisland.exe`；安装包能够正确配置升级、卸载和开始菜单快捷方式。
 
-### v0.1.3 更新摘要
+### 系统要求
 
-- 新增自适应高度的首次启动环境检查，针对不同检测结果提供安装、登录、设置和重新检测入口。
-- 完善 Codex CLI 安装与登录流程，额度服务断开时保留最近一次有效数据。
-- 增强网易云音乐等播放器的 SMTC 检测与排查提示。
-- 优化环境检查胶囊的布局、字号、按钮位置及窗口高度。
-- 修复从环境检查打开 Obsidian 设置时可能出现黑色卡死窗口的问题。
+- 64 位 Windows 10 或 Windows 11
+- Microsoft Edge WebView2 Runtime（Windows 11 通常已包含）
+- 可选：Codex Desktop 与 Codex CLI，用于状态和额度功能
+- 可选：支持 Windows SMTC 的媒体播放器
+- 可选：Obsidian，用于随手记功能
 
-## 常用功能
+## 快速上手
 
-- **Codex 状态**：左侧圆环显示剩余额度，右侧指示灯区分空闲、运行中与离线；Codex 退出后自动转为灰色。
-- **音乐与歌词**：读取 Windows SMTC 的歌曲、封面、进度与播放状态，支持播放控制、音量、专辑取色声波和按播放器校准歌词时间。
-- **Obsidian 随手记**：向指定 Vault 快速写入日记、待办和普通记录，并在胶囊中查看、完成或删除当天条目。
-- **临时文件托盘**：拖入文件后暂存路径，之后可以从胶囊再次拖出或打开；Wisland 不复制原文件。
-- **两种导航**：可在 Classic 图标栏与 Option Wheel 之间切换，并拖动调整页面顺序。
-- **外观定制**：支持胶囊缩放、透明度、边框效果，以及 S 态左右区域的图片或 GIF。
-- **桌面行为**：支持中键锁定展开、拖动回弹、最小化横条、全屏/进程黑名单、开机自启和系统托盘。
-- **环境检查**：首次安装或手动触发时，直接在胶囊中检查 WebView2、Codex、额度、SMTC 和 Obsidian；S 态轮播结果，L 态显示完整列表与修复入口。
+1. 首次启动会进入环境检查；在胶囊展开状态中可查看完整结果并处理缺失项。
+2. 将鼠标移入屏幕顶部中央的胶囊即可展开，移开约 0.5 秒后自动收起。
+3. 在胶囊上滚动鼠标滚轮，切换时间、音乐、日记和文件托盘页面。
+4. 中键单击可锁定或解除展开状态；右键打开快捷菜单。
+5. 将胶囊向屏幕顶部拖动可收成小横条，单击横条即可恢复。
+6. 在设置的 Codex 页面安装 Hooks，并在 Codex 提示时完成信任确认。
+7. 在设置的日记页面选择 Obsidian Vault 和日记目录，即可开始快速记录。
 
-## 快速使用
+## Codex 集成说明
 
-1. 安装或升级后首次启动会进入一次环境检查；S 态每 5 秒轮播一项状态，移入胶囊后可在 L 态查看完整列表，也可以选择“跳过”。
-2. 正常启动 Wisland 后，将鼠标移入屏幕顶部中央的黑色胶囊区域即可展开；移开约 0.5 秒后自动收起。
-3. 在胶囊上滚动滚轮切换时间、音乐、日记和文件托盘页面。
-4. 中键单击可锁定或解除展开状态；右键打开“收起 / 设置”菜单。
-5. 将胶囊向屏幕顶部拖动可收成小横条，单击横条即可唤醒。
-6. 在设置的“Codex”页面安装 Hooks，并重启 Codex，即可同步任务开始和完成状态。
-7. 在设置的“日记”页面选择 Obsidian Vault 和日记目录，即可使用快速记录。
+Wisland 使用 Codex 生命周期 Hooks 同步任务开始与完成状态，并通过已登录的 Codex CLI 获取额度。安装 Hooks 后应完全重启 Codex，使新配置生效。
+
+Codex App 的“设置 → 钩子”页面需要已知的项目根目录才会发起查询；尚未打开项目时，即使 Hook 已被识别并正常执行，设置页也可能显示“未找到钩子”。可以先在 Codex 中打开一个项目，再返回设置页确认；运行时回复下方出现 Hook 信息同样说明配置已被加载。
+
+如果 PowerShell 因执行策略阻止 `codex.ps1`，可以改用：
+
+```powershell
+& "$env:APPDATA\npm\codex.cmd"
+```
 
 ## 页面说明
 
 ### 时间 / Codex
 
-S 态中央显示时钟，左侧是 Codex 剩余额度圆环，右侧状态灯含义如下：
+S 态中央显示时钟，左侧圆环显示 Codex 剩余额度，右侧状态灯含义如下：
 
-- 绿色：Codex 在线且当前空闲，或任务已经完成
-- 橙色：Codex 任务进行中
+- 绿色：Codex 在线且当前空闲，或最近任务已完成
+- 橙色：Codex 正在执行任务
 - 灰色：Codex 未启动、已退出或状态不可用
 
-额度读取需要独立安装并登录 Codex CLI。环境检查检测到 npm 时可直接一键安装 CLI，并引导完成 `codex login`；尚未安装 Node.js 时会在胶囊内显示操作步骤。Wisland 通过 `codex app-server` 的账户额度接口读取数据，不复制 Codex Desktop 的内置组件；短时连接失败会保留最近一次成功额度并标注为待刷新。
+额度读取依赖单独安装并登录的 Codex CLI。Wisland 通过 `codex app-server` 的账户额度接口读取数据；短时连接失败时会保留最近一次成功结果并标记为待刷新。
 
 ### 音乐
 
-Wisland 读取 Windows 的 SMTC 媒体会话，因此播放器需要向系统提供媒体信息。播放过一次的播放器会出现在设置中，可单独调整歌词补偿。网易云音乐若没有被发现，请在网易云“设置 → 系统设置”中开启系统媒体控制（SMTC），然后从“设置 → 行为 → 运行环境检查”重新扫描。
+Wisland 读取 Windows SMTC 媒体会话，因此播放器必须向系统提供媒体信息。网易云音乐若未被发现，请在其“设置 → 系统设置”中开启系统媒体控制（SMTC），再从 Wisland 的“设置 → 行为”重新运行环境检查。
 
 ### Obsidian
 
-Wisland 直接读写你选择的 Vault。配置日记目录后，可以在胶囊里写入随手记和待办；写入前请确认目录与现有 Obsidian 结构一致。
+Wisland 直接读写你选择的本地 Vault。配置日记目录后，可在胶囊中写入随手记和待办；写入前请确认目录与现有 Obsidian 结构一致。
 
 ### 临时文件托盘
 
-拖入胶囊的文件只在本次运行的内存中保存路径。退出 Wisland 后列表会清空，原文件不会被修改或删除。
+拖入胶囊的文件只在当前运行期间保存路径。退出 Wisland 后列表会清空，原文件不会被修改、删除或上传。
 
-## 安装与构建
+## 本地开发
 
-预编译安装包位于 [GitHub Releases](https://github.com/Lev1z/Wisland/releases)。开发环境需要 Windows 10/11、Node.js LTS、Rust stable、WebView2 和 Tauri 2 所需的 Windows 编译组件。
+开发环境需要 Node.js LTS、Rust stable、WebView2，以及 Tauri 2 所需的 Windows C++ 编译工具。
 
-```bash
+### 项目结构
+
+```text
+Wisland/
+├─ src/                     # TypeScript 前端
+│  ├─ modules/             # 胶囊交互、媒体、Codex、Obsidian 等功能模块
+│  └─ assets/              # 应用图标与前端静态资源
+├─ public/
+│  ├─ themes/              # 内置胶囊主题
+│  └─ assets/visuals/      # 内置图片与动图素材
+├─ src-tauri/               # Tauri / Rust 桌面端
+│  ├─ src/                 # 窗口、媒体、设置、日志及系统集成
+│  ├─ icons/               # Windows 与安装包图标
+│  └─ windows/             # NSIS 安装脚本扩展
+├─ scripts/                 # Codex 状态 Hook 脚本与资源生成工具
+├─ docs/assets/             # README 使用的项目图片
+├─ index.html               # 主胶囊窗口入口
+├─ settings.html            # 设置窗口入口
+└─ package.json             # 前端依赖与开发命令
+```
+
+```powershell
 npm install
 npm run tauri dev
 ```
 
-生成前端产物：
+构建前端：
 
-```bash
+```powershell
 npm run build
 ```
 
-生成 Windows 可执行文件与 NSIS 安装包：
+构建 Windows 应用和 NSIS 安装包：
 
-```bash
+```powershell
 npm run tauri build
 ```
 
 默认产物位于：
 
-- `src-tauri/target/release/Wisland.exe`
+- `src-tauri/target/release/wisland.exe`
 - `src-tauri/target/release/bundle/nsis/Wisland_<版本>_x64-setup.exe`
 
 ## 数据与隐私
 
-设置、Codex 状态和日志保存在 `%APPDATA%\wisland`。Obsidian 内容仅写入用户指定的本地 Vault；临时文件托盘不上传或复制文件。歌词与 Codex 额度所需的网络请求由对应功能按需发起。
+Wisland 的设置、Codex 状态和日志保存在 `%APPDATA%\wisland`。Obsidian 内容仅写入用户指定的本地 Vault；临时文件托盘不会上传或复制文件。歌词与 Codex 额度功能仅在使用时向相应服务发起请求。
 
 ## 技术栈
 
-- Tauri 2
-- Rust + Windows API
-- Vanilla TypeScript + Vite
-- Windows SMTC
-- Lyrix
+- [Tauri 2](https://tauri.app/)
+- Rust 与 Windows API
+- Vanilla TypeScript 与 Vite
+- Windows System Media Transport Controls（SMTC）
+- [Lyrix](https://crates.io/crates/lyrix)
 
-## 分支
+## 致谢
 
-- Wisland 主线：`main`
-- 原始底座快照：`pyisland/tauri-island`
-- 上游参考：`upstream/tauri-island`
+Wisland 参考了 PyIsland 的视觉方向，并从 `tauri-island` 的公开代码演进而来；当前主线已围绕 Codex 与个人桌面工作流进行了精简和重构。
 
-上游变化会按需挑选，不直接把所有功能合并回 Wisland。
+## 许可证
 
-## 项目主页
-
-[github.com/Lev1z/Wisland](https://github.com/Lev1z/Wisland)
+本项目采用 [MIT License](LICENSE)。

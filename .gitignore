@@ -1,40 +1,52 @@
-# Logs
-logs
+# Dependencies and build output
+node_modules/
+dist/
+dist-ssr/
+target/
+src-tauri/target-*/
+coverage/
+*.exe
+*.msi
+*.pdb
+
+# Logs and local runtime data
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
-
-node_modules
-dist
-dist-ssr
 *.local
 
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Editors and operating systems
+.vscode/
+.idea/
 .DS_Store
+Thumbs.db
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
-dynamic-island
-node_modules/
-dist/
-target/
-*.exe
-*.msi
-.vscode/
-.kiro/
-.claude/
-.windsurf/
+*.lnk
+
+# Local AI and automation tooling
 .agent/
+.claude/
+.kiro/
+.windsurf/
 claude-psmux-team/
+
+# Local release helpers
 release.md
 release.bat
 一键构建脚本.bat
-*.lnk
+
+# Legacy checkout directory
+dynamic-island/
