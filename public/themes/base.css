@@ -438,27 +438,38 @@ html, body {
 }
 
 .quota-track,
-#codex-quota-progress {
+.quota-progress {
     fill: none;
-    stroke-width: 3;
+    stroke-width: 2;
 }
 
 #codex-quota-ring.quota-stale { opacity: .68; }
-#codex-quota-ring.quota-stale #codex-quota-progress { stroke-dasharray: 4 3; }
+#codex-quota-ring.quota-stale .quota-progress { stroke-dasharray: 4 3; }
 
 .quota-track { stroke: rgba(255, 255, 255, 0.2); }
+.quota-track-five-hour { stroke: rgba(155, 176, 255, 0.2); }
 
-#codex-quota-progress {
+#codex-quota-weekly-progress,
+#codex-quota-five-hour-progress {
     stroke: rgba(255, 255, 255, 0.96);
     stroke-linecap: round;
-    stroke-dasharray: 47.124;
-    stroke-dashoffset: 47.124;
     transform: rotate(-90deg);
     transform-origin: 10px 10px;
     transition: stroke-dashoffset 0.5s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.25s ease;
 }
 
-#codex-quota-ring.quota-unknown #codex-quota-progress { opacity: 0; }
+#codex-quota-weekly-progress {
+    stroke-dasharray: 50.265;
+    stroke-dashoffset: 50.265;
+}
+
+#codex-quota-five-hour-progress {
+    stroke: rgba(255, 255, 255, 0.96);
+    stroke-dasharray: 31.416;
+    stroke-dashoffset: 31.416;
+}
+
+#codex-quota-ring.quota-unknown .quota-progress { opacity: 0; }
 
 #codex-status-dot {
     width: 20px;
@@ -2148,7 +2159,6 @@ body.minimized #collapsed-indicator { display: block; }
 #codex-quota-label,
 #codex-status-label {
     width: max-content;
-    max-width: 5rem;
     text-align: center;
 }
 
@@ -2157,7 +2167,10 @@ body.minimized #collapsed-indicator { display: block; }
 }
 
 #island-capsule.expanded #home-detail-row {
-    display: grid;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: .35rem;
 }
 
 #island-capsule.expanded #time-wrapper {

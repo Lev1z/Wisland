@@ -21,7 +21,7 @@ Wisland stays at the top of your screen and presents Codex status and quota, med
 
 ## Highlights
 
-- **Codex status and quota** — view your remaining quota and distinguish idle, running, and offline states at a glance.
+- **Codex status and quota** — the outer concentric ring shows the weekly quota and the inner ring shows the five-hour quota; the status indicator distinguishes idle, running, and offline states.
 - **Music, lyrics, and controls** — read track metadata, artwork, progress, and playback state from Windows SMTC, with playback controls, volume, album-colored waveforms, and per-player lyric timing.
 - **Obsidian quick notes** — append notes, tasks, and journal entries to a selected Vault and manage today's entries from the capsule.
 - **Temporary file tray** — keep references to dropped files and drag them out or open them later without copying or modifying the originals.
@@ -42,6 +42,12 @@ The installer is recommended over copying the standalone `Wisland.exe` from a bu
 - Optional: Codex Desktop and Codex CLI for status and quota features
 - Optional: a media player that exposes Windows SMTC sessions
 - Optional: Obsidian for quick notes
+
+### v0.1.4 highlights
+
+- Replaces the single Codex quota ring with two white concentric rings: weekly quota outside and five-hour quota inside.
+- Shows both `1week` and `5h` remaining percentages together with the current task state below Page 1.
+- Preserves the existing environment check, cache, and quota-service fallback behavior.
 
 ## Quick start
 
@@ -69,7 +75,7 @@ If PowerShell execution policy blocks `codex.ps1`, launch the command shim inste
 
 ### Clock / Codex
 
-The center of the compact state shows the clock. The left ring displays remaining Codex quota, while the right indicator uses:
+The center of the compact state shows the clock. On the left, the outer concentric ring represents the weekly Codex quota and the inner ring represents the five-hour quota. When expanded, the detail line uses `1week: xx% - 5h: xx% - status`. The right status indicator uses:
 
 - Green: Codex is online and idle, or the latest task has completed
 - Orange: Codex is executing a task

@@ -17,12 +17,23 @@ const RETRY_DELAY: Duration = Duration::from_millis(650);
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct CodexQuotaWindow {
+    remaining_percent: f64,
+    used_percent: f64,
+    window_duration_mins: Option<u64>,
+    resets_at: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CodexQuota {
     available: bool,
     remaining_percent: Option<f64>,
     used_percent: Option<f64>,
     window_duration_mins: Option<u64>,
     resets_at: Option<u64>,
+    five_hour: Option<CodexQuotaWindow>,
+    weekly: Option<CodexQuotaWindow>,
     message: Option<String>,
 }
 
@@ -46,6 +57,8 @@ impl CodexQuota {
             used_percent: None,
             window_duration_mins: None,
             resets_at: None,
+            five_hour: None,
+            weekly: None,
             message: Some(message.into()),
         }
     }
@@ -328,26 +341,64 @@ fn quota_from_response(response: &Value) -> Result<CodexQuota, String> {
         })
         .ok_or_else(|| "当前 Codex 登录方式未返回额度窗口".to_string())?;
 
-    let selected = [rate_limit.get("primary"), rate_limit.get("secondary")]
+    let windows: Vec<CodexQuotaWindow> = [rate_limit.get("primary"), rate_limit.get("secondary")]
         .into_iter()
         .flatten()
         .filter(|value| value.is_object())
         .filter_map(|value| {
-            value
+            let used_percent = value
                 .get("usedPercent")
                 .and_then(Value::as_f64)
-                .map(|used| (value, used))
+                .map(|used| used.clamp(0.0, 100.0))?;
+            Some(CodexQuotaWindow {
+                remaining_percent: 100.0 - used_percent,
+                used_percent,
+                window_duration_mins: value.get("windowDurationMins").and_then(Value::as_u64),
+                resets_at: value.get("resetsAt").and_then(Value::as_u64),
+            })
         })
-        .max_by(|left, right| left.1.total_cmp(&right.1))
+        .collect();
+
+    let selected = windows
+        .iter()
+        .max_by(|left, right| left.used_percent.total_cmp(&right.used_percent))
         .ok_or_else(|| "Codex 额度响应中没有可用窗口".to_string())?;
 
-    let used_percent = selected.1.clamp(0.0, 100.0);
+    let exact_window = |duration| {
+        windows
+            .iter()
+            .find(|window| window.window_duration_mins == Some(duration))
+            .cloned()
+    };
+    let five_hour = exact_window(5 * 60).or_else(|| {
+        (windows.len() >= 2)
+            .then(|| {
+                windows
+                    .iter()
+                    .min_by_key(|window| window.window_duration_mins)
+                    .cloned()
+            })
+            .flatten()
+    });
+    let weekly = exact_window(7 * 24 * 60).or_else(|| {
+        (windows.len() >= 2)
+            .then(|| {
+                windows
+                    .iter()
+                    .max_by_key(|window| window.window_duration_mins)
+                    .cloned()
+            })
+            .flatten()
+    });
+
     Ok(CodexQuota {
         available: true,
-        remaining_percent: Some(100.0 - used_percent),
-        used_percent: Some(used_percent),
-        window_duration_mins: selected.0.get("windowDurationMins").and_then(Value::as_u64),
-        resets_at: selected.0.get("resetsAt").and_then(Value::as_u64),
+        remaining_percent: Some(selected.remaining_percent),
+        used_percent: Some(selected.used_percent),
+        window_duration_mins: selected.window_duration_mins,
+        resets_at: selected.resets_at,
+        five_hour,
+        weekly,
         message: None,
     })
 }
@@ -372,7 +423,7 @@ async fn query_codex_quota() -> Result<CodexQuota, String> {
     let exchange = async {
         let mut reader = BufReader::new(stdout);
         stdin
-            .write_all(b"{\"method\":\"initialize\",\"id\":1,\"params\":{\"clientInfo\":{\"name\":\"wisland\",\"title\":\"Wisland\",\"version\":\"0.1.3\"}}}\n")
+            .write_all(b"{\"method\":\"initialize\",\"id\":1,\"params\":{\"clientInfo\":{\"name\":\"wisland\",\"title\":\"Wisland\",\"version\":\"0.1.4\"}}}\n")
             .await
             .map_err(|error| format!("写入 Codex App Server 初始化请求失败：{error}"))?;
         stdin
@@ -475,7 +526,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn uses_the_most_constrained_rate_limit_window() {
+    fn returns_both_rate_limit_windows_and_keeps_the_constrained_summary() {
         let response = serde_json::json!({
             "id": 2,
             "result": {
@@ -488,6 +539,8 @@ mod tests {
         let quota = quota_from_response(&response).unwrap();
         assert_eq!(quota.remaining_percent, Some(40.0));
         assert_eq!(quota.window_duration_mins, Some(10080));
+        assert_eq!(quota.five_hour.unwrap().remaining_percent, 75.0);
+        assert_eq!(quota.weekly.unwrap().remaining_percent, 40.0);
     }
 
     #[test]

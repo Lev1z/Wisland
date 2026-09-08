@@ -1,5 +1,17 @@
 import { invoke } from "@tauri-apps/api/core";
-import { codexQuotaLabel, codexQuotaProgress, codexQuotaRing } from "../dom";
+import {
+  codexQuotaFiveHourProgress,
+  codexQuotaLabel,
+  codexQuotaRing,
+  codexQuotaWeeklyProgress,
+} from "../dom";
+
+type CodexQuotaWindow = {
+  remainingPercent: number;
+  usedPercent: number;
+  windowDurationMins: number | null;
+  resetsAt: number | null;
+};
 
 type CodexQuota = {
   available: boolean;
@@ -7,20 +19,16 @@ type CodexQuota = {
   usedPercent: number | null;
   windowDurationMins: number | null;
   resetsAt: number | null;
+  fiveHour: CodexQuotaWindow | null;
+  weekly: CodexQuotaWindow | null;
   message: string | null;
 };
 
-const CIRCUMFERENCE = 2 * Math.PI * 7.5;
-const CACHE_KEY = "wisland.codexQuota.v1";
+const WEEKLY_CIRCUMFERENCE = 2 * Math.PI * 8;
+const FIVE_HOUR_CIRCUMFERENCE = 2 * Math.PI * 5;
+const CACHE_KEY = "wisland.codexQuota.v2";
 const CACHE_MAX_AGE_MS = 6 * 60 * 60 * 1000;
 let lastSuccessfulQuota: CodexQuota | null = null;
-
-function windowLabel(minutes: number | null): string {
-  if (!minutes) return "当前窗口";
-  if (minutes >= 10080 && minutes % 10080 === 0) return `${minutes / 10080} 周窗口`;
-  if (minutes >= 60 && minutes % 60 === 0) return `${minutes / 60} 小时窗口`;
-  return `${minutes} 分钟窗口`;
-}
 
 function cachedQuota(): CodexQuota | null {
   if (lastSuccessfulQuota) return lastSuccessfulQuota;
@@ -43,29 +51,54 @@ function remember(quota: CodexQuota): void {
   }
 }
 
+function renderWindow(
+  progress: SVGCircleElement,
+  window: CodexQuotaWindow | null,
+  circumference: number,
+): void {
+  if (!window) {
+    progress.style.strokeDashoffset = String(circumference);
+    progress.style.opacity = "0";
+    return;
+  }
+  const remaining = Math.max(0, Math.min(100, window.remainingPercent));
+  progress.style.strokeDashoffset = String(circumference * (1 - remaining / 100));
+  progress.style.opacity = "";
+}
+
+function quotaDescription(label: string, window: CodexQuotaWindow | null): string {
+  if (!window) return `${label}额度不可用`;
+  const reset = window.resetsAt
+    ? `，${new Date(window.resetsAt * 1000).toLocaleString()} 重置`
+    : "";
+  return `${label}剩余 ${Math.round(window.remainingPercent)}%${reset}`;
+}
+
+function percentLabel(window: CodexQuotaWindow | null): string {
+  return window ? `${Math.round(window.remainingPercent)}%` : "--%";
+}
+
 function render(quota: CodexQuota, stale = false): void {
   const remaining = quota.remainingPercent;
   if (!quota.available || remaining === null) {
     codexQuotaRing.classList.add("quota-unknown");
     codexQuotaRing.classList.remove("quota-stale");
-    codexQuotaProgress.style.strokeDashoffset = String(CIRCUMFERENCE);
+    renderWindow(codexQuotaWeeklyProgress, null, WEEKLY_CIRCUMFERENCE);
+    renderWindow(codexQuotaFiveHourProgress, null, FIVE_HOUR_CIRCUMFERENCE);
     codexQuotaRing.title = "Codex 剩余额度未知；需要可调用的独立 Codex CLI";
     codexQuotaRing.setAttribute("aria-label", codexQuotaRing.title);
-    codexQuotaLabel.textContent = "--%";
+    codexQuotaLabel.textContent = "1week: --% - 5h: --%";
     return;
   }
 
-  const normalized = Math.max(0, Math.min(100, remaining));
   codexQuotaRing.classList.remove("quota-unknown");
   codexQuotaRing.classList.toggle("quota-stale", stale);
-  codexQuotaProgress.style.strokeDashoffset = String(CIRCUMFERENCE * (1 - normalized / 100));
-  const reset = quota.resetsAt
-    ? `，${new Date(quota.resetsAt * 1000).toLocaleString()} 重置`
-    : "";
+  renderWindow(codexQuotaWeeklyProgress, quota.weekly, WEEKLY_CIRCUMFERENCE);
+  renderWindow(codexQuotaFiveHourProgress, quota.fiveHour, FIVE_HOUR_CIRCUMFERENCE);
   const freshness = stale ? " · 上次成功数据，正在等待连接恢复" : "";
-  codexQuotaRing.title = `Codex 剩余 ${Math.round(normalized)}% · ${windowLabel(quota.windowDurationMins)}${reset}${freshness}`;
+  codexQuotaRing.title = `Codex 额度 · 外环${quotaDescription("一周", quota.weekly)} · 内环${quotaDescription("5 小时", quota.fiveHour)}${freshness}`;
   codexQuotaRing.setAttribute("aria-label", codexQuotaRing.title);
-  codexQuotaLabel.textContent = `${Math.round(normalized)}%`;
+  codexQuotaLabel.textContent = `1week: ${percentLabel(quota.weekly)} - 5h: ${percentLabel(quota.fiveHour)}`;
 }
 
 async function refresh(): Promise<void> {
@@ -86,6 +119,8 @@ async function refresh(): Promise<void> {
       usedPercent: null,
       windowDurationMins: null,
       resetsAt: null,
+      fiveHour: null,
+      weekly: null,
       message: String(error),
     };
     const cached = cachedQuota();

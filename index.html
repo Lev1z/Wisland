@@ -57,8 +57,10 @@
       <div id="home-main-row">
         <div id="codex-quota-ring" class="quota-unknown" role="img" aria-label="Codex 剩余额度未知" title="Codex 剩余额度未知">
           <svg viewBox="0 0 20 20" aria-hidden="true">
-            <circle class="quota-track" cx="10" cy="10" r="7.5"></circle>
-            <circle id="codex-quota-progress" cx="10" cy="10" r="7.5"></circle>
+            <circle class="quota-track quota-track-weekly" cx="10" cy="10" r="8"></circle>
+            <circle id="codex-quota-weekly-progress" class="quota-progress" cx="10" cy="10" r="8"></circle>
+            <circle class="quota-track quota-track-five-hour" cx="10" cy="10" r="5"></circle>
+            <circle id="codex-quota-five-hour-progress" class="quota-progress" cx="10" cy="10" r="5"></circle>
           </svg>
           <img id="codex-left-custom-visual" class="custom-slot-visual" alt="" hidden />
         </div>
@@ -68,8 +70,8 @@
         </div>
       </div>
       <div id="home-detail-row" aria-hidden="true">
-        <div id="codex-quota-label">--%</div>
-        <span></span>
+        <div id="codex-quota-label">1week: --% - 5h: --%</div>
+        <span>-</span>
         <div id="codex-status-label">空闲</div>
       </div>
     </div>
