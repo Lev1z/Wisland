@@ -147,10 +147,17 @@ async function main() {
       await fs.appendFile(runtimeFile, line.subarray(split));
       const appended = await until(async () => { const value = await invoke('get_runtime_snapshot'); return value.events.length === 4 && value; }, 'incremental append');
       assert.equal(appended.events[3].summary, '中文执行结果');
-      assert.equal(appended.events[2].step, appended.events[3].step);
+      assert.equal(appended.events[2].turnId, appended.events[3].turnId);
       await popup.waitForFunction(() => document.querySelectorAll('.event-row').length === 4);
       const inspected = await invoke('get_runtime_event', { sessionId: appended.sessionId, id: appended.events[2].id });
       assert.equal(inspected.related[0].detail.content, '中文执行结果');
+      await fs.appendFile(runtimeFile, record('token_usage_record', { turn_id: 'qa-turn', response_id: 'qa-response', usage: { total_tokens: 42 } })
+        + record('event_msg', { type: 'raw_response_completed', response_id: 'qa-response', token_usage: { total_tokens: 42 } }));
+      const completion = await until(async () => { const value = await invoke('get_runtime_snapshot'); return value.events.length === 5 && value; }, 'explicit model completion');
+      assert.equal(completion.events[4].modelCall.responseId, 'qa-response');
+      assert.equal(completion.events[4].modelCall.number, 1, 'completion mirrors represent one model call');
+      await popup.waitForFunction(() => document.querySelectorAll('.request-marker').length === 1);
+      assert.equal(await popup.locator('.turn-group, .step-group').count(), 0, 'native view uses a flat timeline');
       await assert.rejects(invoke('select_runtime_session', { id: '../../auth.json' }), /会话不在/);
       await invoke('select_runtime_session', { id: initial.sessionId });
       const second = path.join(runtimeHome, 'sessions/rollout-test-b.jsonl');
@@ -158,7 +165,7 @@ async function main() {
       await until(async () => (await invoke('get_runtime_snapshot')).sessions.length === 2, 'new session discovery');
       assert.equal((await invoke('get_runtime_snapshot')).sessionId, initial.sessionId, 'pinned session must not switch');
       assert.notEqual((await invoke('select_runtime_session', { id: null })).sessionId, initial.sessionId, 'auto mode chooses latest active log');
-      console.log('PASS: native JSONL append / split UTF-8 / tool-result association / path rejection / pinned and automatic sessions');
+      console.log('PASS: native JSONL append / split UTF-8 / tool-result association / model completion dedup / path rejection / pinned and automatic sessions');
     }
     // Stabilize the first account response before testing motion geometry. A
     // weekly-only account legitimately removes the initial placeholder 5h row.

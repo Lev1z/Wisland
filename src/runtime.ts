@@ -2,7 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
 type RuntimeEvent = {
-  id: string; turnId: string; step: number; kind: string; summary: string;
+  id: string; turnId: string; turnNumber: number | null;
+  modelCall: { responseId: string; number: number } | null; kind: string; summary: string;
   timestamp: string | null; sourceType: string; callId: string | null; status: string | null;
 };
 type Snapshot = {
@@ -22,7 +23,7 @@ const rail = el("event-rail");
 const sessionSelect = el<HTMLSelectElement>("runtime-session");
 const kinds: Record<string, string> = {
   user: "用户", assistant: "助手", summary: "摘要", tool: "工具", result: "结果",
-  compaction: "压缩", lifecycle: "回合", error: "异常", context: "记录",
+  compaction: "压缩", lifecycle: "回合", error: "异常", context: "背景", system: "系统", model: "模型",
 };
 const statuses: Record<string, string> = { started: "已开始", completed: "Completed", aborted: "Interrupted", failed: "Failed" };
 let state: Snapshot | null = null;
@@ -44,7 +45,6 @@ let pinPromise: Promise<Snapshot> | null = null;
 let followAfterClose = false;
 const inspectorCard = inspector.querySelector<HTMLElement>(".inspector-card")!;
 const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
-const collapsed = new Set<string>();
 
 function motionEnabled(): boolean {
   return document.documentElement.dataset.motion !== "false" && !reducedMotion.matches;
@@ -118,20 +118,8 @@ function setFollowing(value: boolean): void {
   el("follow").textContent = value ? "Live ↓" : "跟随 ↓";
   el("follow").setAttribute("aria-pressed", String(value));
 }
-function group(key: string, title: string, count: string, className: string): [HTMLElement, HTMLElement] {
-  const wrap = node("section", className);
-  const body = node("div", "group-body");
-  body.hidden = collapsed.has(key);
-  const toggle = button("group-toggle", "", () => {
-    if (collapsed.has(key)) collapsed.delete(key); else collapsed.add(key);
-    body.hidden = collapsed.has(key);
-    toggle.setAttribute("aria-expanded", String(!body.hidden));
-    setFollowing(false);
-  });
-  toggle.setAttribute("aria-expanded", String(!body.hidden));
-  toggle.append(node("span", "chevron", "›"), node("span", "group-title", title), node("span", "group-count", count));
-  wrap.append(toggle, body);
-  return [wrap, body];
+function turnLabel(event: RuntimeEvent): string {
+  return event.turnNumber == null ? "未关联" : `第 ${event.turnNumber} 轮`;
 }
 function renderList(): void {
   if (!state) return;
@@ -143,36 +131,29 @@ function renderList(): void {
   const anchorOffset = anchor ? anchor.getBoundingClientRect().top - top : 0;
   const focused = (document.activeElement as HTMLElement)?.dataset.event;
   const fragment = document.createDocumentFragment();
-  const turns = new Map<string, RuntimeEvent[]>();
+  let previousTurn: string | null = null;
+  // File order is the timeline order: never move a delayed result back beside
+  // its tool call. call_id association remains available inside Inspector.
   for (const event of state.events) {
-    const events = turns.get(event.turnId) ?? [];
-    events.push(event); turns.set(event.turnId, events);
-  }
-  let number = 0;
-  for (const [turnId, events] of turns) {
-    const title = turnId === "unattributed" ? "未关联回合" : `Turn ${++number}`;
-    const status = statuses[state.turnStatus[turnId]] ?? "未记录结束状态";
-    const [turn, body] = group(`turn:${turnId}`, `${title} · ${status}`, `${events.length}`, "turn-group");
-    turn.title = turnId === "unattributed" ? "这部分日志没有可用的 turn_id" : `turn_id: ${turnId}\n编号仅表示当前已加载视图顺序`;
-    // Group by actual linked call group. Results can arrive after other tools.
-    const steps = new Map<number, HTMLElement>();
-    for (const event of events) {
-      let target = body;
-      if (event.step > 0) {
-        if (!steps.has(event.step)) {
-          const [step, stepBody] = group(`step:${turnId}:${event.step}`, `Step ${event.step}`, "展示分组", "step-group");
-          body.append(step); steps.set(event.step, stepBody);
-        }
-        target = steps.get(event.step)!;
-      }
-      const row = button("event-row", "", () => void openEvent(event.id));
-      row.dataset.event = event.id;
-      row.dataset.kind = event.kind;
-      row.title = `${kinds[event.kind] ?? "记录"} · ${event.summary}`;
-      row.append(node("i", "event-color"), node("span", "event-kind", kinds[event.kind] ?? "记录"), node("span", "event-summary", event.summary || "（空内容）"));
-      target.append(row);
+    const row = button("event-row", "", () => void openEvent(event.id));
+    const firstInTurn = event.turnId !== previousTurn;
+    row.dataset.event = event.id;
+    row.dataset.kind = event.kind;
+    row.dataset.turnStart = String(firstInTurn);
+    const status = statuses[state.turnStatus[event.turnId]] ?? "未记录结束状态";
+    row.title = `${turnLabel(event)} · ${status}\n${kinds[event.kind] ?? "记录"} · ${event.summary}`;
+    const gutter = node("span", "timeline-gutter");
+    if (firstInTurn) gutter.append(node("span", "timeline-turn", turnLabel(event)));
+    if (event.modelCall) {
+      row.dataset.modelCall = event.modelCall.responseId;
+      const marker = node("span", "request-marker", `#${event.modelCall.number}`);
+      marker.title = `模型调用 #${event.modelCall.number} 完成\nresponse_id: ${event.modelCall.responseId}\n此处为完成记录，未推算请求起点或耗时`;
+      marker.setAttribute("aria-label", marker.title);
+      gutter.append(marker);
     }
-    fragment.append(turn);
+    row.append(gutter, node("i", "event-color"), node("span", "event-kind", kinds[event.kind] ?? "记录"), node("span", "event-summary", event.summary || "（空内容）"));
+    fragment.append(row);
+    previousTurn = event.turnId;
   }
   if (!state.events.length) fragment.append(node("p", "runtime-empty", state.sessionId ? "等待这份日志写入可展示的事件…" : "暂无本地轨迹\n开始一轮 Codex 对话后，这里会自动更新。"));
   list.replaceChildren(fragment);
@@ -192,7 +173,7 @@ function accept(snapshot: Snapshot): void {
   const switched = state?.sessionId !== snapshot.sessionId;
   if (switched) {
     selected = null; detail = null; restoreAuto = false; navigationSerial++; resetInspector();
-    collapsed.clear(); setFollowing(true); requestSerial++;
+    setFollowing(true); requestSerial++;
   }
   state = snapshot;
   // Do not rebuild an open native select while a streaming log changes its mtime.
@@ -210,7 +191,7 @@ function renderRail(): void {
     item.dataset.event = event.id;
     item.setAttribute("aria-label", `${kinds[event.kind] ?? "记录"} · ${event.summary}`);
     item.setAttribute("aria-current", String(event.id === selected));
-    item.title = `${event.turnId.slice(0, 8)} · Step ${event.step} · ${event.summary}`;
+    item.title = `${turnLabel(event)} · ${event.modelCall ? `模型调用 #${event.modelCall.number} · ` : ""}${event.summary}`;
     item.append(node("i", "event-color"), node("span", "event-kind", kinds[event.kind] ?? "记录"));
     return item;
   }));
@@ -293,8 +274,8 @@ function renderDetail(reset: boolean): void {
       const rp = related.detail.raw.payload ?? {};
       section(related.event.kind === "result" ? "关联结果 · call_id" : "关联工具 · call_id", rp.output ?? rp.arguments ?? rp.input ?? related.detail.content);
     }
-    const metadata: Record<string, unknown> = { source: event.sourceType, timestamp: event.timestamp, turn_id: event.turnId === "unattributed" ? undefined : event.turnId, call_id: event.callId, status: event.status, byte_offset: data.byteOffset };
-    for (const key of ["duration", "duration_ms", "started_at", "completed_at", "exit_code", "model", "phase", "usage", "error", "success"]) if (p[key] !== undefined) metadata[key] = p[key];
+    const metadata: Record<string, unknown> = { source: event.sourceType, timestamp: event.timestamp, turn_id: event.turnId === "unattributed" ? undefined : event.turnId, response_id: event.modelCall?.responseId, call_id: event.callId, status: event.status, byte_offset: data.byteOffset };
+    for (const key of ["duration", "duration_ms", "started_at", "completed_at", "exit_code", "model", "phase", "usage", "token_usage", "error", "success"]) if (p[key] !== undefined) metadata[key] = p[key];
     for (const key of ["started_at_ms", "completed_at_ms", "thread_id"]) if (envelope[key] !== undefined) metadata[key] = envelope[key];
     if (data.mirror) metadata.mirrored_record = data.mirror.payload;
     section("可用元数据", Object.fromEntries(Object.entries(metadata).filter(([, v]) => v !== null && v !== undefined)));

@@ -45,11 +45,13 @@ async function main() {
         const runtime = {
           revision: 1, sessionId: 'test-session', automatic: true,
           sessions: [{ id: 'test-session', label: '优化 Wisland Runtime 侧栏', fileName: 'rollout-test-session.jsonl', threadId: '019a6b3c-1234-5678-9abc-0123456789ab', modified: 1 }],
-          notice: '只读本地 JSONL · Step 为展示分组', error: null,
+          notice: '只读时间线 · 圆点标注已记录的模型完成调用', error: null,
           turnStatus: { t1: 'completed', t2: 'started' },
           events: Array.from({ length: 72 }, (_, i) => ({
-            id: String(i), turnId: i < 36 ? 't1' : 't2', step: Math.floor((i % 36) / 3) + 1,
-            kind: ['assistant', 'tool', 'result'][i % 3], summary: ['分析已有代码及执行计划', 'exec_command · npm run test', '12 tests passed'][i % 3],
+            id: String(i), turnId: i < 36 ? 't1' : 't2', turnNumber: i < 36 ? 1 : 2,
+            modelCall: i % 12 === 11 ? { responseId: `resp-${i}`, number: Math.floor(i / 12) + 1 } : null,
+            kind: i % 12 === 11 ? 'model' : ['assistant', 'tool', 'result'][i % 3],
+            summary: i % 12 === 11 ? `调用 #${Math.floor(i / 12) + 1} 已完成` : ['分析已有代码及执行计划', 'exec_command · npm run test', '12 tests passed'][i % 3],
             timestamp: '2026-11-09T01:00:00Z', sourceType: 'response_item.function_call', callId: `call-${Math.floor(i / 3)}`, status: null,
           })),
         };
@@ -93,8 +95,11 @@ async function main() {
         return boxes.every(b => b.width === 28 && b.height === 28 && b.y === boxes[0].y) && boxes[0].x < boxes[1].x && boxes[1].x < boxes[2].x;
       }), 'header icons share geometry and appear in the requested order');
       await page.waitForFunction(() => document.querySelectorAll('.event-row').length === 72);
-      assert.equal(await page.locator('.turn-group').count(), 2);
-      assert.equal(await page.locator('.step-group').count(), 24);
+      assert.equal(await page.locator('.turn-group, .step-group, .group-toggle').count(), 0, 'timeline must not contain nested groups');
+      assert.deepEqual(await page.locator('.timeline-turn').allTextContents(), ['第 1 轮', '第 2 轮']);
+      assert.equal(await page.locator('.request-marker').count(), 6, 'explicit model calls have timeline markers');
+      assert.ok(await page.locator('.event-summary').evaluateAll(items => items.every(item => item.getBoundingClientRect().x === items[0].getBoundingClientRect().x)), 'all event summaries align on one axis');
+      assert.deepEqual(await page.locator('.event-row').evaluateAll(items => items.map(item => item.dataset.event)), Array.from({ length: 72 }, (_, i) => String(i)), 'timeline keeps source order');
       assert.equal(await page.locator('.event-row').first().evaluate(e => e.getBoundingClientRect().height), 24);
       await page.locator('#trajectory-list').evaluate(e => e.scrollTop = 170);
       await page.waitForTimeout(30);
@@ -139,6 +144,7 @@ async function main() {
         assert.equal(await page.locator('#inspector').isVisible(), true, 'stale close callbacks cannot hide a reopened Inspector');
         await page.keyboard.press('Escape');
         await page.locator('#inspector').waitFor({ state: 'hidden' });
+        await page.locator('#trajectory-list').evaluate(e => { e.scrollTop = 0; e.focus(); });
         await page.screenshot({ path: path.join(output, 'runtime-sidebar.png'), omitBackground: true });
         await page.locator('.event-row').nth(7).dispatchEvent('click');
         await page.waitForFunction(() => document.getElementById('inspector').dataset.phase === 'open');
@@ -147,15 +153,10 @@ async function main() {
         await page.screenshot({ path: path.join(output, 'runtime-inspector.png'), omitBackground: true });
         await page.keyboard.press('Escape');
         await page.locator('#inspector').waitFor({ state: 'hidden' });
-        const group = page.locator('.step-group').first();
-        await group.locator('.group-toggle').dispatchEvent('click');
-        assert.equal(await group.locator('.group-body').isVisible(), false, 'steps collapse');
-        await group.locator('.group-toggle').dispatchEvent('click');
-        assert.equal(await group.locator('.group-body').isVisible(), true, 'steps expand');
         await page.locator('#follow').click();
         await page.evaluate(() => {
           const runtime = window.qaRuntime;
-          runtime.events.push({ ...runtime.events.at(-1), id: '72', kind: 'assistant', summary: '实时追加事件', step: 13 });
+          runtime.events.push({ ...runtime.events.at(-1), id: '72', kind: 'assistant', summary: '实时追加事件', modelCall: null });
           runtime.revision++;
           window.qaEmit('runtime-snapshot', structuredClone(runtime));
         });
@@ -212,7 +213,7 @@ async function main() {
       passed++;
       await context.close();
     }
-    console.log(`PASS: ${passed} sidebar UI scenarios (6 quota states × 2 themes × 3 DPI scales), hierarchy / rail / raw / safe text / scroll restoration. Screenshots: ${output}`);
+    console.log(`PASS: ${passed} sidebar UI scenarios (6 quota states × 2 themes × 3 DPI scales), flat timeline / call markers / rail / raw / safe text / scroll restoration. Screenshots: ${output}`);
   } finally {
     await browser.close();
     await new Promise(resolve => server.close(resolve));

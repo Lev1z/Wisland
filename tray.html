@@ -24,7 +24,7 @@
         <label class="session-label" for="runtime-session">本地会话</label>
         <select id="runtime-session" aria-label="选择本地会话"><option value="">自动 · 最近活跃</option></select>
         <div class="trajectory-body">
-          <div id="trajectory-list" class="trajectory-list" tabindex="0" aria-label="回合、展示步骤与事件"></div>
+          <div id="trajectory-list" class="trajectory-list" tabindex="0" aria-label="按日志顺序排列的事件时间线"></div>
           <section id="inspector" class="inspector" hidden aria-label="事件详情">
             <nav id="event-rail" class="event-rail" aria-label="切换事件"></nav>
             <div class="inspector-card">
@@ -34,7 +34,7 @@
             </div>
           </section>
         </div>
-        <div id="runtime-notice" class="runtime-notice" title="仅展示本地日志实际记录的信息；写盘频率由 Codex 决定。Step 为阅读分组，并非内部模型调用边界。"></div>
+        <div id="runtime-notice" class="runtime-notice" title="按 JSONL 顺序排列；左侧标注已加载轮次。模型圆点仅来自带 response_id 的完成记录，不推算请求开始时间或缺失调用。"></div>
       </section>
       <footer>
         <span id="feedback" role="status" aria-live="polite"></span>

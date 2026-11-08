@@ -34,7 +34,8 @@ pub struct Session {
 pub struct RuntimeEvent {
     id: String,
     turn_id: String,
-    step: u32,
+    turn_number: Option<u32>,
+    model_call: Option<ModelCall>,
     kind: String,
     summary: String,
     timestamp: Option<String>,
@@ -43,6 +44,13 @@ pub struct RuntimeEvent {
     status: Option<String>,
     #[serde(skip)]
     detail: Value,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelCall {
+    response_id: String,
+    number: u32,
 }
 
 #[derive(Clone, Default, Serialize)]
@@ -62,10 +70,12 @@ pub struct Snapshot {
 struct Projection {
     events: VecDeque<RuntimeEvent>,
     turn: String,
-    step: u32,
-    after_result: bool,
+    turn_numbers: HashMap<String, u32>,
+    next_turn: u32,
+    next_model_call: u32,
+    model_calls: HashMap<(String, String), String>,
     turn_status: HashMap<String, String>,
-    calls: HashMap<String, (String, u32)>,
+    calls: HashMap<String, String>,
     // Only paired legacy/raw duplicates are folded, never repeated same-source messages.
     messages: VecDeque<(String, String, String, String, String)>,
     skipped: usize,
@@ -158,8 +168,6 @@ impl Projection {
         {
             if id != self.turn {
                 self.turn = id;
-                self.step = 0;
-                self.after_result = false;
             }
         }
         if self.turn.is_empty() {
@@ -175,112 +183,144 @@ impl Projection {
             return;
         }
 
-        let (kind, content) = match (outer, subtype) {
-            ("event_msg", "UserMessage") => ("user", text_content(&p["content"])),
-            ("event_msg", "AgentMessage") => ("assistant", text_content(&p["content"])),
-            ("event_msg", "Plan") => ("assistant", text_content(&p["text"])),
-            ("event_msg", "Reasoning") => {
-                let summary = text_content(&p["summary_text"]);
-                if summary.is_empty() {
-                    return;
-                }
-                ("summary", summary)
-            }
-            ("event_msg", "CommandExecution") => ("tool", text_content(&p["command"])),
-            (
-                "event_msg",
-                "McpToolCall"
-                | "DynamicToolCall"
-                | "CollabAgentToolCall"
-                | "WebSearch"
-                | "FileChange"
-                | "ImageGeneration",
-            ) => (
-                "tool",
-                format!(
-                    "{} {}",
-                    p["tool"].as_str().unwrap_or(subtype),
-                    text_content(&p["arguments"])
-                ),
-            ),
-            ("event_msg", "FunctionCallOutput") => ("result", text_content(&p["output"])),
-            ("event_msg", "task_started" | "turn_started") => {
-                self.turn_status.insert(self.turn.clone(), "started".into());
-                ("lifecycle", "回合开始".to_string())
-            }
-            ("event_msg", "task_complete" | "turn_complete") => {
-                self.turn_status.insert(
-                    self.turn.clone(),
-                    if p["error"].is_null() {
-                        "completed"
-                    } else {
-                        "failed"
+        // These records describe one completed upstream response. Legacy
+        // token_count updates are accumulated/replayed and are NOT call boundaries.
+        let model_call = if outer == "token_usage_record"
+            || (outer == "event_msg" && subtype == "raw_response_completed")
+        {
+            if let Some(response_id) = string(p, "response_id").filter(|id| !id.is_empty()) {
+                let key = (self.turn.clone(), response_id.clone());
+                if let Some(id) = self.model_calls.get(&key) {
+                    if let Some(event) = self.events.iter_mut().find(|e| &e.id == id) {
+                        event.detail["mirror"] = bounded(&line, &mut DETAIL_CHARS.clone());
                     }
-                    .into(),
-                );
-                ("lifecycle", "回合结束".to_string())
-            }
-            ("event_msg", "turn_aborted") => {
-                self.turn_status.insert(self.turn.clone(), "aborted".into());
-                ("lifecycle", "回合中断".to_string())
-            }
-            ("event_msg", "user_message") => ("user", text_content(&p["message"])),
-            ("event_msg", "agent_message") => ("assistant", text_content(&p["message"])),
-            ("event_msg", "agent_reasoning") => ("summary", text_content(&p["text"])),
-            ("response_item", "message") => {
-                let role = p["role"].as_str().unwrap_or("context");
-                (
-                    if role == "user" {
-                        "user"
-                    } else if role == "assistant" {
-                        "assistant"
-                    } else {
-                        "context"
-                    },
-                    text_content(&p["content"]),
-                )
-            }
-            ("response_item", "reasoning") => {
-                let summary = text_content(&p["summary"]);
-                if summary.is_empty() {
                     return;
                 }
-                ("summary", summary)
+                self.next_model_call += 1;
+                self.model_calls.insert(key, offset.to_string());
+                Some(ModelCall {
+                    response_id,
+                    number: self.next_model_call,
+                })
+            } else {
+                None
             }
-            (
-                "response_item",
-                "function_call"
-                | "custom_tool_call"
-                | "local_shell_call"
-                | "tool_search_call"
-                | "web_search_call"
-                | "image_generation_call",
-            ) => {
-                let args = p
-                    .get("arguments")
-                    .or_else(|| p.get("input"))
-                    .or_else(|| p.get("action"))
-                    .unwrap_or(&Value::Null);
+        } else {
+            None
+        };
+
+        let (kind, content) = if let Some(call) = &model_call {
+            ("model", format!("调用 #{} 已完成", call.number))
+        } else {
+            match (outer, subtype) {
+                ("event_msg", "UserMessage") => ("user", text_content(&p["content"])),
+                ("event_msg", "AgentMessage") => ("assistant", text_content(&p["content"])),
+                ("event_msg", "Plan") => ("assistant", text_content(&p["text"])),
+                ("event_msg", "Reasoning") => {
+                    let summary = text_content(&p["summary_text"]);
+                    if summary.is_empty() {
+                        return;
+                    }
+                    ("summary", summary)
+                }
+                ("event_msg", "CommandExecution") => ("tool", text_content(&p["command"])),
                 (
+                    "event_msg",
+                    "McpToolCall"
+                    | "DynamicToolCall"
+                    | "CollabAgentToolCall"
+                    | "WebSearch"
+                    | "FileChange"
+                    | "ImageGeneration",
+                ) => (
                     "tool",
                     format!(
                         "{} {}",
-                        p["name"].as_str().unwrap_or(subtype),
-                        text_content(args)
+                        p["tool"].as_str().unwrap_or(subtype),
+                        text_content(&p["arguments"])
                     ),
-                )
+                ),
+                ("event_msg", "FunctionCallOutput") => ("result", text_content(&p["output"])),
+                ("event_msg", "task_started" | "turn_started") => {
+                    self.turn_status.insert(self.turn.clone(), "started".into());
+                    ("lifecycle", "回合开始".to_string())
+                }
+                ("event_msg", "task_complete" | "turn_complete") => {
+                    self.turn_status.insert(
+                        self.turn.clone(),
+                        if p["error"].is_null() {
+                            "completed"
+                        } else {
+                            "failed"
+                        }
+                        .into(),
+                    );
+                    ("lifecycle", "回合结束".to_string())
+                }
+                ("event_msg", "turn_aborted") => {
+                    self.turn_status.insert(self.turn.clone(), "aborted".into());
+                    ("lifecycle", "回合中断".to_string())
+                }
+                ("event_msg", "user_message") => ("user", text_content(&p["message"])),
+                ("event_msg", "agent_message") => ("assistant", text_content(&p["message"])),
+                ("event_msg", "agent_reasoning") => ("summary", text_content(&p["text"])),
+                ("response_item", "message") => {
+                    let role = p["role"].as_str().unwrap_or("context");
+                    (
+                        if role == "user" {
+                            "user"
+                        } else if role == "assistant" {
+                            "assistant"
+                        } else if role == "system" || role == "developer" {
+                            "system"
+                        } else {
+                            "context"
+                        },
+                        text_content(&p["content"]),
+                    )
+                }
+                ("response_item", "reasoning") => {
+                    let summary = text_content(&p["summary"]);
+                    if summary.is_empty() {
+                        return;
+                    }
+                    ("summary", summary)
+                }
+                (
+                    "response_item",
+                    "function_call"
+                    | "custom_tool_call"
+                    | "local_shell_call"
+                    | "tool_search_call"
+                    | "web_search_call"
+                    | "image_generation_call",
+                ) => {
+                    let args = p
+                        .get("arguments")
+                        .or_else(|| p.get("input"))
+                        .or_else(|| p.get("action"))
+                        .unwrap_or(&Value::Null);
+                    (
+                        "tool",
+                        format!(
+                            "{} {}",
+                            p["name"].as_str().unwrap_or(subtype),
+                            text_content(args)
+                        ),
+                    )
+                }
+                (
+                    "response_item",
+                    "function_call_output" | "custom_tool_call_output" | "tool_search_output",
+                ) => ("result", text_content(&p["output"])),
+                (
+                    _,
+                    "compacted" | "context_compaction" | "compaction" | "context_compacted"
+                    | "ContextCompaction",
+                ) => ("compaction", "Context compaction".into()),
+                ("event_msg", "error" | "warning") => ("error", text_content(&p["message"])),
+                _ => ("context", subtype.to_string()),
             }
-            (
-                "response_item",
-                "function_call_output" | "custom_tool_call_output" | "tool_search_output",
-            ) => ("result", text_content(&p["output"])),
-            (
-                _,
-                "compacted" | "context_compaction" | "compaction" | "context_compacted"
-                | "ContextCompaction",
-            ) => ("compaction", "Context compaction".into()),
-            ("event_msg", "error" | "warning") => ("error", text_content(&p["message"])),
-            _ => ("context", subtype.to_string()),
         };
         // Some Codex versions persist both event_msg and response_item for one message.
         // Fold only an equal cross-source pair within this turn; keep source provenance.
@@ -330,29 +370,27 @@ impl Projection {
                 self.messages.pop_front();
             }
         }
-        if matches!(kind, "assistant" | "summary" | "tool") && (self.step == 0 || self.after_result)
-        {
-            self.step += 1;
-            self.after_result = false;
-        }
         let call_id = string(p, "call_id");
         let mut turn_id = self.turn.clone();
-        let mut step = if matches!(kind, "user" | "lifecycle") {
-            0
-        } else {
-            self.step
-        };
         if kind == "tool" {
             if let Some(id) = &call_id {
-                self.calls.insert(id.clone(), (turn_id.clone(), step));
+                self.calls.insert(id.clone(), turn_id.clone());
             }
         } else if kind == "result" {
-            if let Some(group) = call_id.as_ref().and_then(|id| self.calls.get(id)) {
-                turn_id = group.0.clone();
-                step = group.1;
+            if let Some(turn) = call_id.as_ref().and_then(|id| self.calls.get(id)) {
+                turn_id = turn.clone();
             }
-            self.after_result = true;
         }
+        let turn_number = if turn_id == "unattributed" {
+            None
+        } else {
+            Some(
+                *self.turn_numbers.entry(turn_id.clone()).or_insert_with(|| {
+                    self.next_turn += 1;
+                    self.next_turn
+                }),
+            )
+        };
         let mut raw = line.clone();
         // Render only exposed reasoning summaries, never encrypted/raw reasoning bodies.
         if subtype == "reasoning" {
@@ -369,7 +407,8 @@ impl Projection {
         self.events.push_back(RuntimeEvent {
             id: offset.to_string(),
             turn_id,
-            step,
+            turn_number,
+            model_call,
             kind: kind.into(),
             summary: short(
                 &content.split_whitespace().collect::<Vec<_>>().join(" "),
@@ -382,14 +421,19 @@ impl Projection {
                 format!("{outer}.{subtype}")
             },
             call_id,
-            status: string(p, "status"),
+            status: if kind == "model" {
+                Some("completed".into())
+            } else {
+                string(p, "status")
+            },
             detail,
         });
-        if completed_item && kind == "tool" {
-            self.after_result = true;
-        }
         while self.events.len() > MAX_EVENTS {
-            self.events.pop_front();
+            if let Some(event) = self.events.pop_front() {
+                if let Some(call) = event.model_call {
+                    self.model_calls.remove(&(event.turn_id, call.response_id));
+                }
+            }
             self.dropped += 1;
         }
         if self.calls.len() > MAX_EVENTS {
@@ -397,6 +441,8 @@ impl Projection {
                 .retain(|id, _| self.events.iter().any(|e| e.call_id.as_ref() == Some(id)));
         }
         self.turn_status
+            .retain(|turn, _| self.events.iter().any(|e| &e.turn_id == turn));
+        self.turn_numbers
             .retain(|turn, _| self.events.iter().any(|e| &e.turn_id == turn));
     }
 }
@@ -696,7 +742,12 @@ impl Service {
             self.snapshot.notice = match &self.tail {
                 None => "未找到本地 rollout JSONL；开始一轮 Codex 对话后自动发现".into(),
                 Some(t) => format!(
-                    "只读本地 JSONL · Step 为展示分组{}{}{}",
+                    "只读时间线 · 轮次为已加载记录编号{}{}{}{}",
+                    if t.projection.events.iter().any(|e| e.model_call.is_some()) {
+                        " · 圆点标注已记录的模型完成调用"
+                    } else {
+                        " · 此日志未记录模型调用边界"
+                    },
                     if t.truncated {
                         " · 仅最近 4 MiB"
                     } else {
@@ -898,12 +949,114 @@ mod tests {
             "event_msg",
             json!({"type":"task_complete", "turn_id":"t1"}),
         );
-        assert_eq!(p.events[1].step, p.events[2].step);
-        assert_eq!(p.events[3].step, 2);
+        assert_eq!(p.events[1].turn_id, p.events[2].turn_id);
+        assert_eq!(p.events[3].turn_number, Some(1));
         assert_eq!(p.turn_status["t1"], "completed");
         assert!(p.events[1].status.is_none()); // An output is not proof of success.
         feed(&mut p, 5, "future_item", json!({"foo":1}));
         assert_eq!(p.events.back().unwrap().kind, "context");
+    }
+    #[test]
+    fn model_calls_require_explicit_completion_ids_and_deduplicate_mirrors() {
+        let mut p = Projection::default();
+        feed(
+            &mut p,
+            0,
+            "event_msg",
+            json!({"type":"task_started", "turn_id":"t1"}),
+        );
+        feed(
+            &mut p,
+            1,
+            "event_msg",
+            json!({"type":"token_count", "info":{"total_token_usage":{"total_tokens":42}}}),
+        );
+        assert_eq!(p.events.len(), 1); // Usage totals are not an individual model call.
+        feed(
+            &mut p,
+            2,
+            "token_usage_record",
+            json!({"turn_id":"t1", "response_id":"resp-a", "usage":{"total_tokens":42}}),
+        );
+        feed(
+            &mut p,
+            3,
+            "event_msg",
+            json!({"type":"raw_response_completed", "response_id":"resp-a", "token_usage":{"total_tokens":42}}),
+        );
+        assert_eq!(p.events.len(), 2);
+        assert_eq!(p.events[1].model_call.as_ref().unwrap().number, 1);
+        assert_eq!(
+            p.events[1].model_call.as_ref().unwrap().response_id,
+            "resp-a"
+        );
+        assert_eq!(p.events[1].status.as_deref(), Some("completed"));
+        assert!(!p.events[1].detail["mirror"].is_null());
+        feed(
+            &mut p,
+            4,
+            "token_usage_record",
+            json!({"turn_id":"t1", "response_id":"resp-b"}),
+        );
+        assert_eq!(p.events[2].model_call.as_ref().unwrap().number, 2);
+        feed(&mut p, 5, "token_usage_record", json!({"turn_id":"t1"}));
+        assert!(p.events[3].model_call.is_none());
+    }
+    #[test]
+    fn delayed_results_keep_file_order_and_original_turn() {
+        let mut p = Projection::default();
+        feed(
+            &mut p,
+            0,
+            "event_msg",
+            json!({"type":"task_started", "turn_id":"t1"}),
+        );
+        feed(
+            &mut p,
+            1,
+            "response_item",
+            json!({"type":"function_call", "call_id":"c1", "name":"exec"}),
+        );
+        feed(
+            &mut p,
+            2,
+            "event_msg",
+            json!({"type":"task_started", "turn_id":"t2"}),
+        );
+        feed(
+            &mut p,
+            3,
+            "response_item",
+            json!({"type":"function_call_output", "call_id":"c1", "output":"late"}),
+        );
+        assert_eq!(
+            p.events.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(),
+            ["0", "1", "2", "3"]
+        );
+        assert_eq!(p.events[2].turn_number, Some(2));
+        assert_eq!(p.events[3].turn_number, Some(1));
+        assert_eq!(p.events[3].turn_id, "t1");
+    }
+    #[test]
+    fn turn_numbers_remain_stable_when_older_events_are_evicted() {
+        let mut p = Projection::default();
+        feed(
+            &mut p,
+            0,
+            "event_msg",
+            json!({"type":"task_started", "turn_id":"t1"}),
+        );
+        feed(
+            &mut p,
+            1,
+            "event_msg",
+            json!({"type":"task_started", "turn_id":"t2"}),
+        );
+        for i in 2..(MAX_EVENTS + 10) {
+            feed(&mut p, i as u64, "future_item", json!({"value":i}));
+        }
+        assert!(p.events.iter().all(|e| e.turn_number == Some(2)));
+        assert_eq!(p.turn_numbers.len(), 1);
     }
     #[test]
     fn duplicate_mirrors_are_folded_but_repeated_messages_survive() {
