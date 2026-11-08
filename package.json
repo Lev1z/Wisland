@@ -13,11 +13,14 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "test:version": "node scripts/test-version.cjs",
+    "test:runtime-detail": "node scripts/test-runtime-detail.cjs",
     "preview": "vite preview",
     "tauri": "tauri"
   },
   "dependencies": {
-    "@tauri-apps/api": "2.10.1"
+    "@tauri-apps/api": "2.10.1",
+    "dompurify": "3.4.17",
+    "marked": "18.1.3"
   },
   "devDependencies": {
     "@tauri-apps/cli": "2.10.1",

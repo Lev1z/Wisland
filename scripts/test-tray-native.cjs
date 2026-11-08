@@ -153,6 +153,24 @@ async function main() {
       await popup.waitForFunction(() => document.querySelectorAll('.event-row').length === 4);
       const inspected = await invoke('get_runtime_event', { sessionId: appended.sessionId, id: appended.events[2].id });
       assert.equal(inspected.related[0].detail.content, '中文执行结果');
+      await invoke('set_tray_expanded', { expanded: true });
+      await until(visible, 'Inspector native host');
+      await pause(350);
+      await popup.locator('.event-row[data-kind="tool"]').click();
+      await popup.waitForFunction(() => document.getElementById('inspector').dataset.phase === 'open'
+        && document.getElementById('inspector-content').textContent.includes('中文执行结果'));
+      assert.equal(await popup.locator('#inspector-title').textContent(), 'exec_command');
+      assert.equal(await popup.locator('[data-section="command"] pre').textContent(), 'npm test');
+      assert.equal((await popup.locator('#inspector-content').textContent()).split('中文执行结果').length - 1, 1);
+      assert.equal(await popup.locator('[data-section="technical"]').getAttribute('open'), null);
+      await popup.locator('#tab-raw').click();
+      assert.ok((await popup.locator('#inspector-content').textContent()).includes('function_call'));
+      await popup.locator('#tab-overview').click();
+      await popup.keyboard.press('Escape');
+      await popup.locator('#inspector').waitFor({ state: 'hidden' });
+      await invoke('set_tray_expanded', { expanded: false });
+      await until(async () => !(await visible()), 'Inspector native host hidden');
+      console.log('PASS: native Inspector command / related output / deduplication / raw tab / close');
       await fs.appendFile(runtimeFile, record('token_usage_record', { turn_id: 'qa-turn', response_id: 'qa-response', usage: { total_tokens: 42 } })
         + record('event_msg', { type: 'raw_response_completed', response_id: 'qa-response', token_usage: { total_tokens: 42 } }));
       const completion = await until(async () => { const value = await invoke('get_runtime_snapshot'); return value.events.length === 5 && value; }, 'explicit model completion');

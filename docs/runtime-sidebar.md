@@ -14,6 +14,16 @@
 - 点击事件打开侧栏内部 Inspector，只覆盖摘要区域。轮次列宽 34px；原时间线的轮次、彩条和两字标签留在原位，不复制另一套导航、不调暗列表。点击露出的原标签直接切换事件，也可在左列上滚动。右侧展示概述、工具参数、关联结果、可用元数据与原始记录。
 - Inspector 打开时暂停滚动跟随并临时固定会话，关闭后恢复打开前的列表滚动位置与原来的会话选择模式；点击 `Live ↓` / `跟随 ↓` 可继续跟随。详情抽屉从右侧滑入并渐显（300ms），关闭时反向收回（220ms），可中途反向操作；系统关闭动画或启用减少动态效果时直接切换。原行按事件 ID 就地更新，锁定会话或增量刷新不替换左列节点。Esc 依次关闭会话选择框、Inspector、侧栏；隐藏不退出 Wisland。
 
+### Inspector 概述
+
+- 按事件类型排版，保留“概述 / 原始内容”两页签。用户、助手、系统消息和公开摘要显示安全 Markdown：段落、标题、列表、引用、代码块和表格；正文 13px，代码 12px，不再把整条消息当作 11px 等宽日志。
+- 工具调用显示短工具名、独立命令 / 输入与关联结果；其他参数默认折叠。执行结果优先显示输出，关联命令放在折叠区。同一段内容不再在“内容”“参数”“结果”中重复；镜像源只在原始内容页保留。
+- 实际记录的状态、模型、耗时、退出码与 token 数以前置键值行展示。关联结果的状态与退出码归属该结果，不冒充调用记录自身的状态。`completed` 仅标为“已完成”，不自动等于执行成功；只有明确成功字段或退出码才用成功 / 错误色提示。没有单位的 `duration` 保留原值，不猜测秒或毫秒。
+- 仅对完整、有效的 JSON 对象 / 数组进行解码，从已知参数字段提取 `cmd` / `command`，从已知输出包装中分离正文和退出码。无效 / 截断 JSON、补丁及 Windows 路径保持原文本；未知字段可在附加字段或原始内容中查看，未知事件使用文本 / JSON 回退。
+- 文本默认最多预览 240px，可展开、收起和复制该段保留内容；这是界面折叠，不会恢复读取器已截断的数据。底部标明数据限长，日志中的截断提示保留。实时刷新保留展开状态、技术信息开关和详情滚动位置。
+- `call_id`、源类型、字节偏移等置于默认折叠的“技术信息”，不挤占正文。毛玻璃模式下 Inspector 同样采用中性灰 / 浅色不透明覆盖层，避免底下时间线透出。
+- Markdown 使用 [Marked](https://marked.js.org/using_advanced) 解析并经 [DOMPurify](https://github.com/cure53/DOMPurify) 标签 / 属性白名单过滤。原始 HTML 显示为文字，图片只显示说明，链接只显示文字和悬停地址，不执行脚本、不请求远程资源、不跳转离开侧栏；复制只在用户点击时发生。依赖许可证随前端资源保留在 `third-party/`。
+
 侧栏失焦保持显示与背景材质，不切换为 Windows 非活动态的灰白背景，也不抢回输入焦点。通过隐藏按钮、Esc、Alt+F4 或切回胶囊关闭。顶部按钮顺序为刷新额度、设置、隐藏；底部不再显示“显示胶囊”，改用托盘右键菜单返回。托盘态右键菜单不再显示“切换至托盘态”。
 
 ## 数据契约
@@ -30,7 +40,7 @@
 - 工具和结果继续通过真实 `call_id` 在 Inspector 内关联。延迟结果保留原轮次标识，但在时间线中停留于实际写入位置。
 - 同一消息的旧事件和原始响应镜像合并为一行，Inspector 保留两条来源。未知事件仍可查看原始记录。
 - 未记录的耗时、成功状态和模型信息不推算。收到工具结果不自动等同于成功；日志尚无完成记录时不声称任务仍在运行。
-- 只呈现公开摘要；省略原始推理正文、加密内容和二进制字段。Inspector 中的代码与 HTML 始终作为纯文本显示。
+- 只呈现公开摘要；省略原始推理正文、加密内容和二进制字段。Inspector 消息可显示安全 Markdown，代码与原始 HTML 始终作为文字显示。
 - 顶部状态灯和额度继续使用现有全局监控链路，不代表下拉框所选历史会话的当前状态。
 
 内存与读取有界：首次的历史内容预算为整条有效历史链合计 4 MiB，从最新日志向前分配，优先保留最近内容；后续活动日志每轮增量最多 512 KiB。发现阶段只读取每份日志的首行元数据，上限 2 MiB；正文单行超过 2 MiB 跳过；列表保留最近 800 个事件；Inspector 对原始记录和内容做限长处理，每段文本最多 32K 字符。超长文本显示截断提示，原始内容页同时标注限长与字段省略。压缩日志、云端会话，以及未落盘的内部事件不在本次数据源范围内。
@@ -48,6 +58,7 @@ Windows 无标题栏窗口仍有非客户区边距。Tauri `set_size` 接收客�
 ```powershell
 npm run build
 npm run test:version
+npm run test:runtime-detail
 cd src-tauri
 cargo test --lib
 cargo build
@@ -57,6 +68,8 @@ node scripts/test-tray-native.cjs --display --runtime
 ```
 
 界面测试使用模拟数据检查双额度/仅周额度/离线、深浅主题、三个 DPI、超长选择项在 360px / 850px 高度下的边界、键盘导航与 Esc 优先级、时间线行对齐与顺序、模型调用标记、Inspector 导航、安全文本与滚动恢复。原生测试使用自己创建的隔离 `CODEX_HOME` 检查文件追加、半个 UTF-8 字符、结果关联、会话锁定、多日志合并、历史截止位置、同名分支、路径拒绝和真实窗口开关；测试脚本依赖支持 `node:sqlite` 的 Node 版本，只在自己的 fixture 中模拟 Codex 当前日志索引更新。材质单元测试使用真实隐藏 HWND 验证非客户区消息处理不会夺取前台。实际毛玻璃在动画前几帧是否闪烁、跨机器失焦外观，仍需用户机器上的连续观察，不能仅凭截图或几何测试判定。
+
+Inspector 另有独立呈现模型测试及深浅色 / 三 DPI 界面用例：覆盖命令去重、分页 item 解包、结果关联、公开摘要、镜像、缺失状态、零值 / false、未知字段、模型用量、错误颜色、Markdown 与外部资源隔离、复制、长文本展开和增量刷新阅读状态。构建依赖仍有 npm audit 报告的既有开发期告警（Vite、nanoid、source-map-js）；本次未混入工具链升级。生产依赖审计无已知告警。
 
 参考源码（只读、未复制其组件）：Codex 的 `protocol/src/protocol.rs`（`TokenUsageRecord` / `RawResponseCompletedEvent`）、`protocol/src/models.rs`、`protocol/src/items.rs`、`history/src/rollout_payload.rs`、`rollout/src/policy.rs`、`rollout/src/rollout_file_name.rs`、`rollout/src/rollout_reference_index.rs`、`thread-store/src/local/rollout_lineage.rs` / `revert_thread.rs`；DSH 的 `packages/client/ui-trajectory/src/client/TrajectoryTable.tsx`、`TrajectoryTable.module.css`、`trajectory-virtual-rows.ts`。Wisland 使用自己的 Rust 增量读取器及 Vanilla TypeScript 视图，不引入 DSH 运行时依赖。
 

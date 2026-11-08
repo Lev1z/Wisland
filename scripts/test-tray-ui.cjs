@@ -6,6 +6,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const http = require('node:http');
 const path = require('node:path');
+const { checkInspector } = require('./test-inspector-ui.cjs');
 const root = path.resolve(__dirname, '../dist');
 const output = path.resolve(__dirname, '../target/tray-ui-qa');
 const quotaWindow = (remainingPercent) => ({ remainingPercent, resetsAt: Math.floor(Date.now() / 1000) + 8300 });
@@ -67,12 +68,15 @@ async function main() {
             if (command === 'get_tray_snapshot' || command === 'refresh_tray_quota') return snapshot;
             if (command === 'get_runtime_snapshot') return structuredClone(runtime);
             if (command === 'select_runtime_session') { runtime.automatic = args.id === null; runtime.sessionId = args.id ?? 'test-session'; runtime.revision++; return structuredClone(runtime); }
-            if (command === 'get_runtime_event') return {
-              event: runtime.events.find(e => e.id === args.id),
-              detail: { content: '<img src=x onerror="window.qaXss=true">\n' + '长内容'.repeat(200), byteOffset: 123,
-                raw: { type: 'response_item', payload: { type: 'function_call', arguments: '{"cmd":"npm run test"}', name: 'exec_command' } } },
-              related: [],
-            };
+            if (command === 'get_runtime_event') {
+              if (window.qaDetailOverride) return structuredClone(window.qaDetailOverride);
+              const event = runtime.events.find(e => e.id === args.id);
+              const content = '# 执行计划\n\n**先验证**，再提交。\n\n<img src=x onerror="window.qaXss=true">\n' + '长内容'.repeat(200);
+              const payload = event.kind === 'tool' ? { type: 'function_call', arguments: '{"cmd":"npm run test"}', name: 'exec_command' }
+                : event.kind === 'result' ? { type: 'function_call_output', output: '12 tests passed' }
+                : { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: content }] };
+              return { event, detail: { content, byteOffset: 123, raw: { type: 'response_item', payload } }, related: [] };
+            }
             if (command === 'set_tray_expanded') window.qaEmit('tray-expanded', args.expanded);
           },
         };
@@ -282,6 +286,7 @@ async function main() {
         await page.waitForTimeout(40);
         assert.equal(await page.locator('#trajectory-list').evaluate(e => e.scrollTop), 100, 'paused reader keeps position on append');
       }
+      if (scenario.name === 'dual') await checkInspector(page, { theme, scale, output });
       assert.equal(await page.locator('#quota-rings').isVisible(), false, 'expanded panel must not repeat the rings');
       assert.ok(await page.evaluate(() => {
         const details = document.getElementById('details');

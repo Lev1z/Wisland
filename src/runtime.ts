@@ -1,21 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { SessionPicker, type SessionOption } from "./session-picker";
-
-type RuntimeEvent = {
-  id: string; turnId: string; turnNumber: number | null;
-  modelCall: { responseId: string; number: number } | null; kind: string; summary: string;
-  timestamp: string | null; sourceType: string; callId: string | null; status: string | null;
-};
+import { type EventDetail, type RuntimeEvent } from "./runtime-detail";
+import { detailTitle, renderDetailContent } from "./runtime-detail-view";
 type Snapshot = {
   revision: number; sessionId: string | null; automatic: boolean;
   sessions: { id: string; label: string; modified: number; threadId?: string | null; fileName?: string; forkedFromId?: string | null; parentLabel?: string | null; rolloutCount?: number; selectionNote?: string }[];
   events: RuntimeEvent[]; turnStatus: Record<string, string>; notice: string; error: string | null;
-};
-type EventDetail = {
-  event: RuntimeEvent;
-  detail: { raw: { payload?: Record<string, unknown> }; mirror?: { payload?: Record<string, unknown> }; content: string; byteOffset: number };
-  related: { event: RuntimeEvent; detail: EventDetail["detail"] }[];
 };
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const list = el("trajectory-list");
@@ -30,6 +21,7 @@ let state: Snapshot | null = null;
 let following = true;
 let selected: string | null = null;
 let detail: EventDetail | null = null;
+let disposeDetail: (() => void) | undefined;
 let tab: "overview" | "raw" = "overview";
 let requestSerial = 0;
 let restoreAuto = false;
@@ -49,6 +41,7 @@ function motionEnabled(): boolean {
   return document.documentElement.dataset.motion !== "false" && !reducedMotion.matches;
 }
 function resetInspector(): void {
+  disposeDetail?.(); disposeDetail = undefined;
   transitionSerial++;
   paneAnimations.forEach(animation => animation.cancel()); paneAnimations = [];
   inspectorPhase = "closed"; inspector.hidden = true; inspector.inert = false;
@@ -224,6 +217,7 @@ async function openEvent(id: string): Promise<void> {
   }
   const opening = fresh || inspectorPhase === "closing";
   selected = id; detail = null; requestSerial++;
+  disposeDetail?.(); disposeDetail = undefined;
   const event = state.events.find(e => e.id === id);
   el("inspector-title").textContent = event ? `${kinds[event.kind] ?? "记录"} · ${event.summary}` : "事件详情";
   el("inspector-content").textContent = "正在读取…";
@@ -251,46 +245,22 @@ async function loadDetail(id: string, reset: boolean): Promise<void> {
     detail = next;
     if (changed || reset) renderDetail(reset);
   } catch (error) {
-    if (serial === requestSerial) el("inspector-content").textContent = String(error);
+    if (serial === requestSerial) {
+      disposeDetail?.(); disposeDetail = undefined;
+      el("inspector-content").textContent = String(error);
+    }
   }
 }
 function renderDetail(reset: boolean): void {
   if (!detail) return;
   const content = el("inspector-content");
-  const scroll = content.scrollTop;
-  const { event, detail: data } = detail;
-  el("inspector-title").textContent = `${kinds[event.kind] ?? "记录"} · ${event.summary || event.sourceType}`;
-  el("inspector-title").dataset.kind = event.kind;
+  el("inspector-title").textContent = detailTitle(detail);
+  el("inspector-title").title = detail.event.summary;
+  el("inspector-title").dataset.kind = detail.event.kind;
   el("tab-overview").setAttribute("aria-selected", String(tab === "overview"));
   el("tab-raw").setAttribute("aria-selected", String(tab === "raw"));
-  const sections: HTMLElement[] = [];
-  const section = (title: string, value: unknown): void => {
-    if (value === undefined || value === null || value === "") return;
-    const block = node("section", "detail-section");
-    block.append(node("h4", "", title), node("pre", "", typeof value === "string" ? value : JSON.stringify(value, null, 2)));
-    sections.push(block);
-  };
-  if (tab === "raw") {
-    section("JSONL 记录（限长；二进制 / 加密字段省略）", data.raw);
-    section("同一消息的另一条源记录（已合并显示）", data.mirror);
-  } else {
-    section("内容", data.content);
-    const envelope = data.raw.payload ?? {};
-    const p = (envelope.item as Record<string, unknown>) ?? envelope;
-    section("工具参数", p.arguments ?? p.input ?? p.action ?? p.command);
-    section("执行结果", p.output ?? p.aggregated_output ?? p.content_items ?? p.result);
-    for (const related of detail.related) {
-      const rp = related.detail.raw.payload ?? {};
-      section(related.event.kind === "result" ? "关联结果 · call_id" : "关联工具 · call_id", rp.output ?? rp.arguments ?? rp.input ?? related.detail.content);
-    }
-    const metadata: Record<string, unknown> = { source: event.sourceType, timestamp: event.timestamp, turn_id: event.turnId === "unattributed" ? undefined : event.turnId, response_id: event.modelCall?.responseId, call_id: event.callId, status: event.status, byte_offset: data.byteOffset };
-    for (const key of ["duration", "duration_ms", "started_at", "completed_at", "exit_code", "model", "phase", "usage", "token_usage", "error", "success"]) if (p[key] !== undefined) metadata[key] = p[key];
-    for (const key of ["started_at_ms", "completed_at_ms", "thread_id"]) if (envelope[key] !== undefined) metadata[key] = envelope[key];
-    if (data.mirror) metadata.mirrored_record = data.mirror.payload;
-    section("可用元数据", Object.fromEntries(Object.entries(metadata).filter(([, v]) => v !== null && v !== undefined)));
-  }
-  content.replaceChildren(...sections);
-  content.scrollTop = reset ? 0 : scroll;
+  disposeDetail?.();
+  disposeDetail = renderDetailContent(content, detail, tab === "raw", reset);
 }
 export function closeInspector(): boolean {
   if (inspectorPhase === "closed") return false;
@@ -299,6 +269,7 @@ export function closeInspector(): boolean {
   requestSerial++;
   transitionInspector(false, () => {
     selected = null; detail = null;
+    disposeDetail?.(); disposeDetail = undefined;
     updateSelection();
     // Preserve the list throughout the transition; hide the overlay only at its end.
     if (followAfterClose) { setFollowing(true); list.scrollTop = list.scrollHeight; }
