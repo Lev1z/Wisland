@@ -58,9 +58,18 @@ footer { margin-top: 4px; display: flex; flex-shrink: 0; align-items: center; mi
 .trajectory-heading { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; height: 29px; margin-bottom: 7px; font-size: 13px; }
 .follow-button { border: 0; padding: 4px 9px; border-radius: 12px; background: var(--hover); font-size: 11px; color: var(--muted); }
 .follow-button[aria-pressed="true"] { color: var(--accent); }
-.session-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-#runtime-session { width: 100%; flex-shrink: 0; min-width: 0; height: 26px; margin: 0 0 8px; padding: 0 6px; font: inherit; font-size: 11px; color: var(--muted); background: var(--hover); border: 1px solid var(--border); border-radius: 4px; }
-#runtime-session option { background: var(--surface); color: var(--text); }
+.session-picker { position: relative; flex: 0 0 auto; min-width: 0; width: 100%; margin-bottom: 8px; z-index: 4; }
+#runtime-session { display: flex; align-items: center; gap: 6px; width: 100%; min-width: 0; height: 28px; padding: 0 8px; font-size: 11px; text-align: left; color: var(--muted); background: var(--hover); border: 1px solid var(--border); border-radius: 4px; }
+#runtime-session-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.session-chevron { flex: 0 0 12px; text-align: center; }
+#runtime-sessions { position: absolute; top: calc(100% + 4px); left: 0; right: 0; max-width: 100%; max-height: 360px; overflow: hidden auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--track) transparent; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 4px 12px #00000026; padding: 4px; }
+.session-option { min-width: 0; padding: 6px 8px; border-radius: 4px; cursor: pointer; border-left: 2px solid transparent; }
+.session-option[data-branch="true"] { margin-left: 10px; }
+.session-option[data-active="true"] { background: var(--hover); }
+.session-option[aria-selected="true"] { border-left-color: var(--accent); }
+.session-option-title, .session-option-subtitle { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.session-option-title { font-size: 12px; line-height: 18px; }
+.session-option-subtitle { font-size: 10px; line-height: 15px; color: var(--muted); }
 .trajectory-body { --turn-column: 34px; --type-column: 28px; --event-bar: 3px; --event-gap: 6px; --inspector-left: calc(var(--turn-column) + var(--event-bar) + var(--type-column) + 3 * var(--event-gap)); position: relative; flex: 1; min-height: 0; overflow: hidden; isolation: isolate; }
 .trajectory-list { height: 100%; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; outline: none; }
 .trajectory-list, .inspector-content { scrollbar-width: thin; scrollbar-color: var(--track) transparent; }

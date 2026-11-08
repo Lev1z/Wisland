@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { initRuntime, closeInspector } from "./runtime";
+import { initRuntime, closeInspector, closeSessionPicker } from "./runtime";
 
 type QuotaWindow = { remainingPercent: number; resetsAt: number | null };
 type Snapshot = {
@@ -107,7 +107,7 @@ el<HTMLButtonElement>("refresh").addEventListener("click", async () => {
   finally { refreshing = false; el<HTMLButtonElement>("refresh").disabled = false; if (snapshot) render(snapshot); }
 });
 window.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && !closeInspector()) void command("set_tray_expanded", { expanded: false });
+  if (event.key === "Escape" && !event.defaultPrevented && !closeSessionPicker() && !closeInspector()) void command("set_tray_expanded", { expanded: false });
 });
 window.addEventListener("contextmenu", (event) => event.preventDefault());
 

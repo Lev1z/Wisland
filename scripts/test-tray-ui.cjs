@@ -66,7 +66,7 @@ async function main() {
             if (command === 'get_tray_appearance') return { acrylic: false, dark: matchMedia('(prefers-color-scheme: dark)').matches, motion: true };
             if (command === 'get_tray_snapshot' || command === 'refresh_tray_quota') return snapshot;
             if (command === 'get_runtime_snapshot') return structuredClone(runtime);
-            if (command === 'select_runtime_session') { runtime.automatic = args.id === null; runtime.revision++; return structuredClone(runtime); }
+            if (command === 'select_runtime_session') { runtime.automatic = args.id === null; runtime.sessionId = args.id ?? 'test-session'; runtime.revision++; return structuredClone(runtime); }
             if (command === 'get_runtime_event') return {
               event: runtime.events.find(e => e.id === args.id),
               detail: { content: '<img src=x onerror="window.qaXss=true">\n' + '长内容'.repeat(200), byteOffset: 123,
@@ -89,7 +89,61 @@ async function main() {
       await page.locator('#details').waitFor({ state: 'visible' });
       assert.equal(await page.locator('.quota-row').count(), scenario.count);
       assert.equal(await page.locator('#restore').count(), 0, 'capsule action belongs in tray menu, not sidebar');
-      assert.equal(await page.locator('#runtime-session option').first().textContent(), '自动 · 优化 Wisland Runtime 侧栏');
+      assert.equal(await page.locator('#runtime-session-label').textContent(), '自动 · 优化 Wisland Runtime 侧栏');
+      await page.locator('#runtime-session').click();
+      await page.locator('#runtime-sessions:not([hidden])').waitFor();
+      const hideCount = await page.evaluate(() => window.qaCommands.filter(c => c.command === 'set_tray_expanded').length);
+      await page.keyboard.press('Escape');
+      assert.equal(await page.locator('#runtime-sessions').isVisible(), false);
+      assert.equal(await page.evaluate(() => window.qaCommands.filter(c => c.command === 'set_tray_expanded').length), hideCount, 'Escape closes the picker without hiding the sidebar');
+      await page.evaluate(() => {
+        window.qaOriginalSessions = window.qaRuntime.sessions;
+        window.qaRuntime.sessions = [...window.qaOriginalSessions, ...Array.from({ length: 45 }, (_, i) => ({
+          id: `long-${i}`, threadId: `long-${i}`, label: `会话 ${i} ` + 'very-long-title-'.repeat(30), modified: 1,
+          forkedFromId: i < 3 ? 'test-session' : null, parentLabel: '优化 Wisland Runtime 侧栏', rolloutCount: 3,
+        }))];
+        window.qaRuntime.revision++; window.qaEmit('runtime-snapshot', structuredClone(window.qaRuntime));
+      });
+      for (const height of [850, 360]) {
+        await page.setViewportSize({ width: 525, height });
+        await page.locator('#runtime-session').click();
+        await page.waitForTimeout(30);
+        if (height === 360) {
+          await page.locator('#quota-rows').evaluate(e => e.style.display = 'none');
+          await page.waitForTimeout(30);
+          await page.locator('#quota-rows').evaluate(e => e.style.display = '');
+          await page.waitForTimeout(30);
+        }
+        assert.ok(await page.evaluate(() => {
+          const panel = document.getElementById('runtime-sessions');
+          const rect = panel.getBoundingClientRect();
+          const trigger = document.getElementById('runtime-session').getBoundingClientRect();
+          return rect.left >= trigger.left && rect.right <= trigger.right && rect.bottom <= innerHeight - 8
+            && panel.scrollWidth <= panel.clientWidth && panel.scrollHeight > panel.clientHeight;
+        }), `picker must stay within the sidebar for long names, ${height}px height and ${scale} DPI`);
+        await page.keyboard.press('End');
+        assert.ok(await page.locator('#runtime-session').evaluate(e => !!e.getAttribute('aria-activedescendant')));
+        await page.keyboard.press('Home');
+        if (height === 850 && scale === 1.25 && theme === 'dark' && scenario.name === 'dual') await page.screenshot({ path: path.join(output, 'session-picker-bounded.png') });
+        await page.keyboard.press('Escape');
+      }
+      await page.setViewportSize({ width: 525, height: 850 });
+      await page.locator('#runtime-session').click();
+      await page.locator('.session-option[data-value="long-0"]').click();
+      await page.waitForFunction(() => window.qaRuntime.sessionId === 'long-0');
+      assert.ok(await page.locator('#runtime-session-label').evaluate(e => e.scrollWidth > e.clientWidth && getComputedStyle(e).textOverflow === 'ellipsis'), 'selected long title is ellipsized too');
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth === innerWidth), 'long selected title cannot widen the sidebar');
+      await page.locator('#runtime-session').click();
+      await page.locator('header strong').click();
+      assert.equal(await page.locator('#runtime-sessions').isVisible(), false, 'click outside dismisses the picker');
+      await page.locator('#runtime-session').click(); await page.keyboard.press('Home'); await page.keyboard.press('Enter');
+      await page.waitForFunction(() => window.qaRuntime.automatic === true);
+      await page.evaluate(() => { window.qaRuntime.sessions = window.qaOriginalSessions; window.qaRuntime.revision++; window.qaEmit('runtime-snapshot', structuredClone(window.qaRuntime)); });
+      await page.locator('#runtime-session').focus();
+      await page.keyboard.press('ArrowDown'); await page.keyboard.press('End'); await page.keyboard.press('Enter');
+      await page.waitForFunction(() => window.qaRuntime.automatic === false);
+      await page.locator('#runtime-session').click(); await page.keyboard.press('Home'); await page.keyboard.press('Enter');
+      await page.waitForFunction(() => window.qaRuntime.automatic === true);
       assert.ok(await page.evaluate(() => {
         const boxes = ['refresh', 'settings', 'hide-sidebar'].map(id => document.getElementById(id).getBoundingClientRect());
         return boxes.every(b => b.width === 28 && b.height === 28 && b.y === boxes[0].y) && boxes[0].x < boxes[1].x && boxes[1].x < boxes[2].x;
@@ -116,6 +170,9 @@ async function main() {
       await page.waitForFunction(() => document.getElementById('inspector-content').textContent.includes('npm run test'));
       assert.equal(await page.locator('#inspector-content img').count(), 0, 'log payload must render as text, never HTML');
       await page.waitForFunction(() => document.getElementById('inspector').dataset.phase === 'open');
+      await page.locator('#runtime-session').click();
+      await page.keyboard.press('Escape');
+      assert.equal(await page.locator('#inspector').isVisible(), true, 'picker closes before Inspector in the Escape hierarchy');
       assert.equal(await page.locator('#event-rail, .rail-event').count(), 0, 'Inspector must not build a replacement navigation rail');
       assert.ok(await page.evaluate(() => {
         const kind = document.querySelector('.event-row[data-event="10"] .event-kind');
@@ -241,7 +298,7 @@ async function main() {
       passed++;
       await context.close();
     }
-    console.log(`PASS: ${passed} sidebar UI scenarios (6 quota states × 2 themes × 3 DPI scales), stationary original timeline / summary-only drawer / narrow gutter / reversible motion / raw / safe text / scroll restoration. Screenshots: ${output}`);
+    console.log(`PASS: ${passed} sidebar UI scenarios (6 quota states × 2 themes × 3 DPI scales), bounded long-title picker at 360/850px / keyboard and Escape priority / stationary timeline / reversible Inspector / safe text / scroll restoration. Screenshots: ${output}`);
   } finally {
     await browser.close();
     await new Promise(resolve => server.close(resolve));

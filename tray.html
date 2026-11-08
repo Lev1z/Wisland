@@ -21,8 +21,12 @@
       <div id="quota-rows" class="quota-rows"></div>
       <section id="runtime" class="runtime" aria-label="Runtime Trajectory">
         <div class="trajectory-heading"><strong>Trajectory</strong><button id="follow" class="follow-button" type="button" aria-pressed="true" title="跟随最新事件；向上滚动可暂停">Live ↓</button></div>
-        <label class="session-label" for="runtime-session">本地会话</label>
-        <select id="runtime-session" aria-label="选择本地会话"><option value="">自动 · 最近活跃</option></select>
+        <div class="session-picker" id="session-picker">
+          <button id="runtime-session" type="button" role="combobox" aria-label="选择本地会话" aria-haspopup="listbox" aria-expanded="false" aria-controls="runtime-sessions">
+            <span id="runtime-session-label">自动 · 最近活跃</span><span class="session-chevron" aria-hidden="true">⌄</span>
+          </button>
+          <div id="runtime-sessions" role="listbox" aria-label="本地会话" hidden></div>
+        </div>
         <div class="trajectory-body">
           <div id="trajectory-list" class="trajectory-list" tabindex="0" aria-label="按日志顺序排列的事件时间线"></div>
           <section id="inspector" class="inspector" hidden aria-label="事件详情">

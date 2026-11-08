@@ -8,6 +8,7 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const net = require('node:net');
 const fs = require('node:fs/promises');
+const { DatabaseSync } = require('node:sqlite');
 
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function until(fn, label, timeout = 15000) {
@@ -29,7 +30,8 @@ async function main() {
     await fs.mkdir(path.join(runtimeHome, 'sessions'), { recursive: true });
     runtimeFile = path.join(runtimeHome, `sessions/rollout-2026-11-09T12-30-00-${runtimeThreadId}.jsonl`);
     await fs.writeFile(path.join(runtimeHome, 'session_index.jsonl'), JSON.stringify({ id: runtimeThreadId, thread_name: 'Runtime 侧栏回归会话' }) + '\n');
-    await fs.writeFile(runtimeFile, record('event_msg', { type: 'task_started', turn_id: 'qa-turn' })
+    await fs.writeFile(runtimeFile, record('session_meta', { id: runtimeThreadId, history_mode: 'paginated', history_base: null })
+      + record('event_msg', { type: 'task_started', turn_id: 'qa-turn' })
       + record('event_msg', { type: 'user_message', message: '测试中文增量轨迹' })
       + record('response_item', { type: 'function_call', name: 'exec_command', call_id: 'qa-call', arguments: '{"cmd":"npm test"}' }));
   }
@@ -138,7 +140,7 @@ async function main() {
       assert.equal(initial.sessions[0].label, 'Runtime 侧栏回归会话', 'rollout UUID maps to Codex title');
       await fs.appendFile(path.join(runtimeHome, 'session_index.jsonl'), JSON.stringify({ id: runtimeThreadId, thread_name: '会话重命名验证' }) + '\n');
       await until(async () => (await invoke('get_runtime_snapshot')).sessions[0].label === '会话重命名验证', 'rename synchronization');
-      await popup.waitForFunction(() => document.querySelector('#runtime-session option').textContent.includes('会话重命名验证'));
+      await popup.waitForFunction(() => document.querySelector('#runtime-session-label').textContent.includes('会话重命名验证'));
       const line = Buffer.from(record('response_item', { type: 'function_call_output', call_id: 'qa-call', output: '中文执行结果' }));
       const split = line.indexOf(Buffer.from('中')) + 1; // split inside a UTF-8 character
       await fs.appendFile(runtimeFile, line.subarray(0, split));
@@ -160,12 +162,35 @@ async function main() {
       assert.equal(await popup.locator('.turn-group, .step-group').count(), 0, 'native view uses a flat timeline');
       await assert.rejects(invoke('select_runtime_session', { id: '../../auth.json' }), /会话不在/);
       await invoke('select_runtime_session', { id: initial.sessionId });
-      const second = path.join(runtimeHome, 'sessions/rollout-test-b.jsonl');
-      await fs.writeFile(second, record('event_msg', { type: 'task_started', turn_id: 'qa-second' }));
+      // A replacement rollout for the same thread is NOT a second conversation.
+      const replacementId = '019a6b3c-1234-5678-9abc-0123456789ac';
+      const cutoff = (await fs.stat(runtimeFile)).size;
+      const replacement = path.join(runtimeHome, `sessions/rollout-2026-11-09T12-31-00-${runtimeThreadId}_${replacementId}.jsonl`);
+      await fs.writeFile(replacement, record('session_meta', { id: runtimeThreadId, history_mode: 'paginated', history_base: { thread_id: runtimeThreadId, end_ordinal_exclusive: 100, end_byte_offset: cutoff } })
+        + record('event_msg', { type: 'agent_message', message: 'replacement continuation' }));
+      // The quota CLI can backfill an index in this test's isolated CODEX_HOME.
+      // A real revert changes BOTH the file and threads.rollout_path atomically.
+      const fixtureDbPath = path.join(runtimeHome, 'state_5.sqlite');
+      if (await fs.stat(fixtureDbPath).then(() => true, () => false)) {
+        const db = new DatabaseSync(fixtureDbPath);
+        try { db.exec('PRAGMA busy_timeout=2000'); db.prepare('UPDATE threads SET rollout_path=? WHERE id=?').run(replacement, runtimeThreadId); }
+        finally { db.close(); }
+      }
+      await until(async () => { const value = await invoke('get_runtime_snapshot'); return value.sessions.length === 1 && value.sessions[0].rolloutCount === 2 && value.events.length === 6; }, 'same-thread generations merged with retained history');
+      await fs.appendFile(runtimeFile, record('event_msg', { type: 'agent_message', message: 'abandoned suffix must not appear' }));
+      await pause(3500);
+      const retained = await invoke('get_runtime_snapshot');
+      assert.equal(retained.sessionId, initial.sessionId); assert.equal(retained.events.length, 6);
+      assert.ok(!retained.events.some(e => e.summary.includes('abandoned')));
+      const forkId = '019a6b3c-1234-5678-9abc-0123456789ad';
+      const second = path.join(runtimeHome, `sessions/rollout-2026-11-09T12-32-00-${forkId}.jsonl`);
+      await fs.writeFile(second, record('session_meta', { id: forkId, forked_from_id: runtimeThreadId, history_mode: 'paginated', history_base: null })
+        + record('event_msg', { type: 'task_started', turn_id: 'qa-second' }));
+      await fs.appendFile(path.join(runtimeHome, 'session_index.jsonl'), JSON.stringify({ id: forkId, thread_name: '会话重命名验证' }) + '\n');
       await until(async () => (await invoke('get_runtime_snapshot')).sessions.length === 2, 'new session discovery');
       assert.equal((await invoke('get_runtime_snapshot')).sessionId, initial.sessionId, 'pinned session must not switch');
       assert.notEqual((await invoke('select_runtime_session', { id: null })).sessionId, initial.sessionId, 'auto mode chooses latest active log');
-      console.log('PASS: native JSONL append / split UTF-8 / tool-result association / model completion dedup / path rejection / pinned and automatic sessions');
+      console.log('PASS: native JSONL append / split UTF-8 / results / model markers / logical thread dedup / history cutoffs / distinct forks / path rejection / pinned and automatic sessions');
     }
     // Stabilize the first account response before testing motion geometry. A
     // weekly-only account legitimately removes the initial placeholder 5h row.
@@ -194,6 +219,12 @@ async function main() {
     assertSlide(await recordTransition(true), true, appearance.motion);
     await until(visible, 'upward entrance');
     const rest = await sample();
+    await popup.locator('#runtime-session').click();
+    assert.ok(await popup.locator('#runtime-sessions').evaluate(panel => {
+      const rect = panel.getBoundingClientRect(); return rect.left >= 0 && rect.right <= innerWidth && rect.bottom <= innerHeight;
+    }), 'native WebView session picker stays inside the sidebar');
+    await popup.keyboard.press('Escape');
+    assert.equal(await visible(), true, 'picker Escape must not hide the native sidebar');
     const monitor = await popup.evaluate(() => window.__TAURI__.window.currentMonitor());
     assert.equal(rest.x + rest.width, monitor.workArea.position.x + monitor.workArea.size.width, 'resting outer window ends exactly at work-area right edge');
     assert.ok(rest.y >= monitor.workArea.position.y && rest.y + rest.height <= monitor.workArea.position.y + monitor.workArea.size.height, 'sidebar stays above taskbar');

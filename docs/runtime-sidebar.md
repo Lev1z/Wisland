@@ -9,9 +9,10 @@
 - 正确区分 `rollout-时间-thread_id.jsonl` 与 `rollout-时间-thread_id_rollout_id.jsonl`：前一个 UUID 用于会话身份和标题映射，后一个 UUID 标识具体日志版本。优先读取 `session_meta.id` 确认身份。
 - 每 3 秒只读查询本地 `state_N.sqlite` 的 `threads.rollout_path` 与 `name`；使用 SQLite 只读连接读取当前 WAL，不启动或接管 Codex。标题索引 `session_index.jsonl` 为兼容回退（最多末尾 8 MiB，最新完整记录生效）。没有名称记录的条目显示“未命名会话”，不将长文件名当作标题。
 - 当前日志由 Codex 索引指定，不按旧文件的修改时间猜测。如果索引不可读，则按文件创建时间戳/日志 ID 回退，并在多版本会话上说明；索引明确指向缺失或未支持的文件时显示不可用提示，**不静默替换成旧轨迹**。
+- 选择框在侧栏内部展开，宽度固定为触发按钮宽度，高度最多 360px，并随剩余屏幕空间缩小；内容独立滚动，长标题省略、悬停查看完整文字，不使用会按最长选项向窗口外扩展的系统原生 `<select>`。自动跟随单独列为模式选项；分支放在主会话下方并标注来源和短 ID，多日志会话显示合并数量。支持方向键、Home / End、Enter / 空格、Tab、Esc 及点击外部关闭。
 - `Live ↓` 跟随新事件。向上滚动会暂停跟随，点击按钮恢复。
 - 点击事件打开侧栏内部 Inspector，只覆盖摘要区域。轮次列宽 34px；原时间线的轮次、彩条和两字标签留在原位，不复制另一套导航、不调暗列表。点击露出的原标签直接切换事件，也可在左列上滚动。右侧展示概述、工具参数、关联结果、可用元数据与原始记录。
-- Inspector 打开时暂停滚动跟随并临时固定会话，关闭后恢复打开前的列表滚动位置与原来的会话选择模式；点击 `Live ↓` / `跟随 ↓` 可继续跟随。详情抽屉从右侧滑入并渐显（300ms），关闭时反向收回（220ms），可中途反向操作；系统关闭动画或启用减少动态效果时直接切换。原行按事件 ID 就地更新，锁定会话或增量刷新不替换左列节点。第一次 Esc 关闭 Inspector，之后 Esc 隐藏侧栏；隐藏不退出 Wisland。
+- Inspector 打开时暂停滚动跟随并临时固定会话，关闭后恢复打开前的列表滚动位置与原来的会话选择模式；点击 `Live ↓` / `跟随 ↓` 可继续跟随。详情抽屉从右侧滑入并渐显（300ms），关闭时反向收回（220ms），可中途反向操作；系统关闭动画或启用减少动态效果时直接切换。原行按事件 ID 就地更新，锁定会话或增量刷新不替换左列节点。Esc 依次关闭会话选择框、Inspector、侧栏；隐藏不退出 Wisland。
 
 侧栏失焦保持显示与背景材质，不切换为 Windows 非活动态的灰白背景，也不抢回输入焦点。通过隐藏按钮、Esc、Alt+F4 或切回胶囊关闭。顶部按钮顺序为刷新额度、设置、隐藏；底部不再显示“显示胶囊”，改用托盘右键菜单返回。托盘态右键菜单不再显示“切换至托盘态”。
 
@@ -55,7 +56,7 @@ node scripts/test-tray-ui.cjs
 node scripts/test-tray-native.cjs --display --runtime
 ```
 
-界面测试使用模拟数据检查双额度/仅周额度/离线、深浅主题、三个 DPI、时间线行对齐与顺序、模型调用标记、Inspector 导航、安全文本与滚动恢复。原生测试使用自己创建的隔离 `CODEX_HOME` 检查文件追加、半个 UTF-8 字符、结果关联、会话锁定、路径拒绝和真实窗口开关。材质单元测试使用真实隐藏 HWND 验证非客户区消息处理不会夺取前台。实际毛玻璃在动画前几帧是否闪烁、跨机器失焦外观，仍需用户机器上的连续观察，不能仅凭截图或几何测试判定。
+界面测试使用模拟数据检查双额度/仅周额度/离线、深浅主题、三个 DPI、超长选择项在 360px / 850px 高度下的边界、键盘导航与 Esc 优先级、时间线行对齐与顺序、模型调用标记、Inspector 导航、安全文本与滚动恢复。原生测试使用自己创建的隔离 `CODEX_HOME` 检查文件追加、半个 UTF-8 字符、结果关联、会话锁定、多日志合并、历史截止位置、同名分支、路径拒绝和真实窗口开关；测试脚本依赖支持 `node:sqlite` 的 Node 版本，只在自己的 fixture 中模拟 Codex 当前日志索引更新。材质单元测试使用真实隐藏 HWND 验证非客户区消息处理不会夺取前台。实际毛玻璃在动画前几帧是否闪烁、跨机器失焦外观，仍需用户机器上的连续观察，不能仅凭截图或几何测试判定。
 
 参考源码（只读、未复制其组件）：Codex 的 `protocol/src/protocol.rs`（`TokenUsageRecord` / `RawResponseCompletedEvent`）、`protocol/src/models.rs`、`protocol/src/items.rs`、`history/src/rollout_payload.rs`、`rollout/src/policy.rs`、`rollout/src/rollout_file_name.rs`、`rollout/src/rollout_reference_index.rs`、`thread-store/src/local/rollout_lineage.rs` / `revert_thread.rs`；DSH 的 `packages/client/ui-trajectory/src/client/TrajectoryTable.tsx`、`TrajectoryTable.module.css`、`trajectory-virtual-rows.ts`。Wisland 使用自己的 Rust 增量读取器及 Vanilla TypeScript 视图，不引入 DSH 运行时依赖。
 

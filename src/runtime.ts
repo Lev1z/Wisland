@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { SessionPicker, type SessionOption } from "./session-picker";
 
 type RuntimeEvent = {
   id: string; turnId: string; turnNumber: number | null;
@@ -8,7 +9,7 @@ type RuntimeEvent = {
 };
 type Snapshot = {
   revision: number; sessionId: string | null; automatic: boolean;
-  sessions: { id: string; label: string; modified: number; threadId?: string | null; fileName?: string }[];
+  sessions: { id: string; label: string; modified: number; threadId?: string | null; fileName?: string; forkedFromId?: string | null; parentLabel?: string | null; rolloutCount?: number; selectionNote?: string }[];
   events: RuntimeEvent[]; turnStatus: Record<string, string>; notice: string; error: string | null;
 };
 type EventDetail = {
@@ -19,7 +20,7 @@ type EventDetail = {
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const list = el("trajectory-list");
 const inspector = el("inspector");
-const sessionSelect = el<HTMLSelectElement>("runtime-session");
+let sessionPicker: SessionPicker;
 const kinds: Record<string, string> = {
   user: "用户", assistant: "助手", summary: "摘要", tool: "工具", result: "结果",
   compaction: "压缩", lifecycle: "回合", error: "异常", context: "背景", system: "系统", model: "模型",
@@ -34,7 +35,6 @@ let requestSerial = 0;
 let restoreAuto = false;
 let savedScroll = 0;
 let returnFocus: string | null = null;
-let sessionOptionsKey = "";
 let renderingList = false;
 let inspectorPhase: "closed" | "opening" | "open" | "closing" = "closed";
 let transitionSerial = 0;
@@ -87,16 +87,24 @@ function transitionInspector(open: boolean, complete: () => void = () => {}): vo
 
 function renderSessionOptions(snapshot: Snapshot): void {
   const current = snapshot.sessions.find(s => s.id === snapshot.sessionId);
-  const optionsKey = JSON.stringify([snapshot.sessionId, snapshot.sessions.map(s => [s.id, s.label])]);
-  if (document.activeElement !== sessionSelect) {
-    if (sessionOptionsKey !== optionsKey) {
-      sessionSelect.replaceChildren(new Option(current ? `自动 · ${current.label}` : "自动 · 最近活跃", ""), ...snapshot.sessions.map(s => new Option(`${s.label}${s.threadId ? ` · ${s.threadId.slice(0, 8)}` : ""}`, s.id)));
-      sessionOptionsKey = optionsKey;
-    }
-    sessionSelect.value = snapshot.automatic ? "" : snapshot.sessionId ?? "";
-  }
-  sessionSelect.title = current ? `${current.label}\n${current.fileName ?? current.id}` : "尚未发现会话";
+  const options: SessionOption[] = [{ value: "", title: "自动跟随最近活跃会话", subtitle: `当前：${current?.label ?? "暂无会话"}` }];
+  const visited = new Set<string>();
+  const add = (session: Snapshot["sessions"][number]): void => {
+    if (visited.has(session.id)) return;
+    visited.add(session.id);
+    const branch = !!session.forkedFromId;
+    options.push({ value: session.id, title: `${branch ? "分支 · " : ""}${session.label}`, branch,
+      subtitle: [session.threadId?.slice(0, 8) ?? session.id, branch ? `源自 ${session.parentLabel ?? session.forkedFromId?.slice(0, 8)}` : "主会话", (session.rolloutCount ?? 1) > 1 ? `${session.rolloutCount} 份日志 · 当前有效轨迹` : "", session.selectionNote].filter(Boolean).join(" · ") });
+    snapshot.sessions.filter(s => s.forkedFromId === session.id).forEach(add);
+  };
+  snapshot.sessions.filter(s => !s.forkedFromId || !snapshot.sessions.some(p => p.id === s.forkedFromId)).forEach(add);
+  snapshot.sessions.forEach(add); // Defensive cycle handling, never omit an entry.
+  sessionPicker.update(options, snapshot.automatic ? "" : snapshot.sessionId ?? "",
+    `${snapshot.automatic ? "自动 · " : current?.forkedFromId ? "分支 · " : ""}${current?.label ?? "最近活跃"}`,
+    current ? `${current.label}\n${current.fileName ?? current.id}` : "尚未发现会话");
 }
+
+export function closeSessionPicker(): boolean { return sessionPicker?.close() ?? false; }
 
 function node<K extends keyof HTMLElementTagNameMap>(tag: K, className = "", text = ""): HTMLElementTagNameMap[K] {
   const element = document.createElement(tag);
@@ -185,7 +193,7 @@ function accept(snapshot: Snapshot): void {
     setFollowing(true); requestSerial++;
   }
   state = snapshot;
-  // Do not rebuild an open native select while a streaming log changes its mtime.
+  // Picker labels update independently of streaming log mtimes and preserve focus.
   renderSessionOptions(snapshot);
   el("runtime-notice").textContent = snapshot.error ?? snapshot.notice;
   renderList();
@@ -310,18 +318,21 @@ export async function initRuntime(): Promise<void> {
   const settleReducedMotion = (): void => { if (!motionEnabled()) paneAnimations.forEach(animation => animation.finish()); };
   reducedMotion.addEventListener("change", settleReducedMotion);
   new MutationObserver(settleReducedMotion).observe(document.documentElement, { attributes: true, attributeFilter: ["data-motion"] });
-  sessionSelect.addEventListener("blur", () => { if (state) renderSessionOptions(state); });
+  sessionPicker = new SessionPicker(value => { void (async () => {
+    restoreAuto = false; selected = null; const serial = ++navigationSerial; requestSerial++; resetInspector();
+    try {
+      await pinPromise?.catch(() => {});
+      if (serial !== navigationSerial) return;
+      const snapshot = await invoke<Snapshot>("select_runtime_session", { id: value || null });
+      if (serial === navigationSerial) accept(snapshot);
+    } catch (error) { el("runtime-notice").textContent = String(error); }
+  })(); });
   list.addEventListener("scroll", () => {
     if (!selected && !renderingList) setFollowing(list.scrollHeight - list.scrollTop - list.clientHeight < 24);
   });
   el("follow").addEventListener("click", () => {
     if (inspectorPhase !== "closed") { followAfterClose = true; closeInspector(); }
     else { setFollowing(true); list.scrollTop = list.scrollHeight; }
-  });
-  sessionSelect.addEventListener("change", async () => {
-    restoreAuto = false; selected = null; navigationSerial++; requestSerial++; resetInspector();
-    try { accept(await invoke<Snapshot>("select_runtime_session", { id: sessionSelect.value || null })); }
-    catch (error) { el("runtime-notice").textContent = String(error); }
   });
   el("close-inspector").addEventListener("click", closeInspector);
   for (const name of ["overview", "raw"] as const) el(`tab-${name}`).addEventListener("click", () => { tab = name; renderDetail(true); });
