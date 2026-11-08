@@ -1,6 +1,6 @@
 [package]
 name = "wisland"
-version = "0.1.5"
+version = "0.2.1"
 description = "A lightweight Windows island for Codex, Obsidian, and focused desktop workflows"
 authors = ["Wisland contributors"]
 license = "MIT"

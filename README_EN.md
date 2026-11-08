@@ -13,7 +13,7 @@ A lightweight Windows desktop island for Codex, music, and focused workflows.
 [简体中文](README.md) · **Eng**
 </div>
 
-Wisland stays at the top of your screen and presents Codex status and quota, media information, Obsidian notes, and temporary files in one restrained capsule, keeping frequent actions close without interrupting your work.
+Wisland presents Codex status and quota, media information, Obsidian notes, and temporary files in a top-edge capsule. Switch to the standard system tray to inspect local conversation trajectories and event details in a right-edge Runtime sidebar.
 
 <p align="center">
   <img src="docs/assets/wisland-capsule.png" width="236" alt="Wisland capsule interface">
@@ -23,6 +23,7 @@ Wisland stays at the top of your screen and presents Codex status and quota, med
 
 - **Codex status and quota** — the outer concentric ring shows the weekly quota and the inner ring shows the five-hour quota; the status indicator distinguishes idle, running, and offline states.
 - **Codex tray mode** — hide the capsule and keep only a status-colored quota ring in the standard Windows notification area. Hover for percentages or click for a Windows-style detail panel. Weekly-only accounts are supported.
+- **Runtime timeline and Inspector** — incrementally follow local Codex JSONL in read-only mode, with recorded turns, model-call completions, and tool results. Resolve conversation names, select forks, read Markdown overviews, and inspect fully expanded raw records inside the sidebar.
 - **Music, lyrics, and controls** — read track metadata, artwork, progress, and playback state from Windows SMTC, with playback controls, volume, album-colored waveforms, and per-player lyric timing.
 - **Obsidian quick notes** — append notes, tasks, and journal entries to a selected Vault and manage today's entries from the capsule.
 - **Temporary file tray** — keep references to dropped files and drag them out or open them later without copying or modifying the originals.
@@ -43,6 +44,15 @@ The installer is recommended over copying the standalone `Wisland.exe` from a bu
 - Optional: Codex Desktop and Codex CLI for status and quota features
 - Optional: a media player that exposes Windows SMTC sessions
 - Optional: Obsidian for quick notes
+
+### v0.2.1 highlights
+
+- Replaces the tray popup with a 525-logical-pixel-wide, full-work-area Runtime sidebar that slides in from the right and stays visible without changing its material when unfocused.
+- Adds a compact flat timeline and an Inspector drawer that preserves the original colored event column and list scroll position.
+- Resolves Codex conversation names, merges rollouts belonging to one thread, and distinguishes actual forks. The bounded session picker uses compact branch labels.
+- Adds type-specific overviews with safe Markdown, key facts first, deduplicated commands/results, expandable previews, and copying. Raw JSONL and mirror records now start fully expanded.
+- Fixes capsule positioning after resolution, DPI, and work-area changes; updates About and version metadata to 0.2.1.
+- [Full release notes (Chinese)](docs/releases/v0.2.1.md) · [Runtime guide and data scope (Chinese)](docs/runtime-sidebar.md).
 
 ### v0.1.5 highlights
 
@@ -72,9 +82,11 @@ The installer is recommended over copying the standalone `Wisland.exe` from a bu
 
 ### Capsule and tray modes
 
-The current development branch (unreleased) upgrades the quota popup to a right-edge Runtime sidebar with a flat, DSH-inspired event timeline and an embedded Inspector. Aligned rows retain colored markers and compact labels; the gutter identifies turns and explicitly recorded model-call completions. Missing call boundaries are reported, never inferred from tool calls. See the [data contract and test guide (Chinese)](docs/runtime-sidebar.md).
+Version 0.2.1 upgrades the quota popup to a right-edge Runtime sidebar with a flat, DSH-inspired event timeline and an embedded Inspector. Aligned rows retain colored markers and compact labels; the gutter identifies turns and explicitly recorded model-call completions. Missing call boundaries are reported, never inferred from tool calls. See the [data contract and test guide (Chinese)](docs/runtime-sidebar.md).
 
 The keyboard-accessible session picker stays inside the sidebar and truncates long titles. Stable thread IDs resolve Codex names and merge multiple rollout files; actual forks remain separate and labeled. A read-only local index selects the current rollout, and bounded history references recover retained records. Missing or compressed history is reported explicitly.
+
+Inspector overviews separate messages, commands, outputs, and recorded status facts. Technical fields are collapsed by default. Safe Markdown does not execute HTML or load remote images. The Raw tab opens JSONL and mirror records fully expanded, ready to scroll and copy; expansion does not recover data already truncated by the reader.
 
 - Right-click the capsule and select “切换至托盘态” (switch to tray mode). Only the quota ring remains in the standard Windows notification area; there is no persistent floating window. Windows may place the icon in its overflow area; drag it into the visible tray area if preferred.
 - The ring uses green for idle, orange for running, and gray for offline. The outer ring represents the weekly quota; the inner ring represents the five-hour quota.
@@ -128,12 +140,19 @@ Development requires Node.js LTS, Rust stable, WebView2, and the Windows C++ bui
 Wisland/
 ├─ src/                     # TypeScript frontend
 │  ├─ modules/             # Capsule, media, Codex, and Obsidian features
+│  ├─ runtime.ts           # Flat timeline, session selection, and Inspector drawer
+│  ├─ runtime-detail*.ts   # Typed overviews, safe Markdown, and detail rendering
+│  ├─ session-picker.ts    # Bounded conversation / fork picker
 │  └─ assets/              # App icons and frontend assets
 ├─ public/
 │  ├─ themes/              # Built-in capsule themes
+│  ├─ third-party/         # Bundled frontend dependency licenses
 │  └─ assets/visuals/      # Built-in image and animation assets
 ├─ src-tauri/               # Tauri / Rust desktop application
 │  ├─ src/                 # Window, media, settings, logging, and OS integration
+│  │  ├─ runtime.rs        # Read-only incremental JSONL reader and projection
+│  │  ├─ runtime_catalog.rs # Names, current rollouts, and retained history
+│  │  └─ display.rs        # Resolution, DPI, and work-area handling
 │  ├─ icons/               # Windows and installer icons
 │  └─ windows/             # NSIS installer extensions
 ├─ scripts/                 # Codex status Hooks and asset-generation utilities
@@ -169,6 +188,8 @@ Default outputs:
 ## Data and privacy
 
 Wisland stores settings, Codex state, and logs in `%APPDATA%\wisland`. Obsidian content is written only to the selected local Vault, and the temporary file tray does not upload or copy files. Network requests for lyrics and Codex quota are made only when their corresponding features are used.
+
+The Runtime sidebar reads local Codex JSONL, the name index, and the current-rollout database without modifying Codex data, uploading conversations, or accessing `auth.json`. History and detail payloads are bounded; information that was not recorded or exposed is not inferred.
 
 ## Technology
 

@@ -13,7 +13,7 @@
 **简体中文** · [Eng](README_EN.md)
 </div>
 
-Wisland 常驻于屏幕顶部，用一枚克制的胶囊集中呈现 Codex 状态与额度、媒体信息、Obsidian 随手记和临时文件，并提供无需离开当前工作的快捷操作。
+Wisland 用屏幕顶部的胶囊集中呈现 Codex 状态与额度、媒体信息、Obsidian 随手记和临时文件；也可切换到标准系统托盘，通过右侧 Runtime 侧栏查看本地会话轨迹与事件详情。
 
 <p align="center">
   <img src="docs/assets/wisland-capsule.png" width="236" alt="Wisland 胶囊界面">
@@ -23,6 +23,7 @@ Wisland 常驻于屏幕顶部，用一枚克制的胶囊集中呈现 Codex 状�
 
 - **Codex 状态与额度**：同心圆外环显示一周额度、内环显示 5 小时额度；状态灯以绿色、橙色和灰色区分空闲、执行中与离线。
 - **Codex 托盘态**：隐藏桌面胶囊，只在 Windows 标准系统托盘显示随任务状态变色的额度环；悬停查看数字、点击展开 Windows 风格详情，支持仅周额度账户。
+- **Runtime 时间线与 Inspector**：只读增量跟随 Codex 本地 JSONL，按真实记录显示轮次、模型调用完成点和工具结果；会话名称映射、分支选择、Markdown 概述与默认展开的原始记录均在侧栏内完成。
 - **音乐、歌词与控制**：读取 Windows SMTC 的歌曲、封面、进度与播放状态，支持播放控制、音量、专辑取色声波和歌词时间校准。
 - **Obsidian 随手记**：向指定 Vault 快速写入日记、待办和普通记录，并管理当天条目。
 - **临时文件托盘**：暂存拖入文件的路径，可再次拖出或打开，不复制和修改原文件。
@@ -43,6 +44,15 @@ Wisland 常驻于屏幕顶部，用一枚克制的胶囊集中呈现 Codex 状�
 - 可选：Codex Desktop 与 Codex CLI，用于状态和额度功能
 - 可选：支持 Windows SMTC 的媒体播放器
 - 可选：Obsidian，用于随手记功能
+
+### v0.2.1 更新摘要
+
+- 托盘详情升级为约 525px 宽、覆盖工作区高度的 Runtime 侧栏，从屏幕右侧展开，失焦不隐藏、不改变材质外观。
+- 新增紧凑统一时间线与内嵌 Inspector；保留左侧彩条、类型标签和滚动位置，详情从右侧平滑滑入。
+- 映射 Codex 会话名称，合并同一会话的多份日志，独立展示真实分支；选择框限制在侧栏内，并简化分支标签。
+- 概述按消息、工具和结果分别排版，支持安全 Markdown、关键状态前置、内容去重、展开与复制；原始 JSONL 及镜像默认完整展开。
+- 修复分辨率 / DPI / 工作区变化后的胶囊定位，统一设置侧栏和“关于”的版本号。
+- [完整更新说明](docs/releases/v0.2.1.md) · [Runtime 使用与数据范围](docs/runtime-sidebar.md)。
 
 ### v0.1.5 更新摘要
 
@@ -70,11 +80,13 @@ Wisland 常驻于屏幕顶部，用一枚克制的胶囊集中呈现 Codex 状�
 
 ## Codex 集成说明
 
-### Runtime 侧栏（当前开发版本，未发布）
+### Runtime 侧栏（v0.2.1）
 
 托盘详情已升级为右侧全高度侧栏：顶部保留状态和额度，下方提供 DSH 风格的统一事件时间线、滚动跟随及内嵌 Inspector。事件保留彩条和两字标签，左侧标注轮次与日志实际记录的模型调用完成点，不再使用 Turn / Step 嵌套卡片。旧日志未记录模型调用边界时明确提示。侧栏失焦保持显示与毛玻璃外观，不抢回焦点。使用方式、数据范围和测试入口见 [Runtime 侧栏说明](docs/runtime-sidebar.md)。
 
 会话选择器限制在侧栏内，长标题省略显示并支持键盘操作。会话按稳定 ID 映射 Codex 名称，同一会话的多份日志合并，真正的分支独立标注。只读读取 Codex 当前日志索引，并沿历史引用恢复保留的记录；压缩或缺失的历史会明确提示。
+
+Inspector 概述按事件类型显示正文、命令、结果和已记录的状态信息，技术字段默认折叠；消息支持安全 Markdown，不执行日志里的 HTML 或加载远程图片。“原始内容”页默认展开 JSONL 与镜像记录，可直接滚动和复制。展开仅影响界面，不恢复读取器已截断的历史或文本。
 
 ### 胶囊态与托盘态
 
@@ -131,13 +143,17 @@ Wisland/
 ├─ src/                     # TypeScript 前端
 │  ├─ modules/             # 胶囊交互、媒体、Codex、Obsidian 等功能模块
 │  ├─ runtime.ts           # 统一时间线、会话切换和摘要区域 Inspector 抽屉
+│  ├─ runtime-detail*.ts   # 事件概述模型、安全 Markdown 与详情呈现
+│  ├─ session-picker.ts    # 侧栏内会话 / 分支选择器
 │  └─ assets/              # 应用图标与前端静态资源
 ├─ public/
 │  ├─ themes/              # 内置胶囊主题
+│  ├─ third-party/         # 随应用分发的前端依赖许可证
 │  └─ assets/visuals/      # 内置图片与动图素材
 ├─ src-tauri/               # Tauri / Rust 桌面端
 │  ├─ src/                 # 窗口、媒体、设置、日志及系统集成
 │  │  ├─ runtime.rs        # 只读 JSONL 增量读取与事件投影
+│  │  ├─ runtime_catalog.rs # 会话名称、当前日志与保留历史链
 │  │  └─ display.rs        # 分辨率、DPI、工作区变化处理
 │  ├─ icons/               # Windows 与安装包图标
 │  └─ windows/             # NSIS 安装脚本扩展
@@ -174,6 +190,8 @@ npm run tauri build
 ## 数据与隐私
 
 Wisland 的设置、Codex 状态和日志保存在 `%APPDATA%\wisland`。Obsidian 内容仅写入用户指定的本地 Vault；临时文件托盘不会上传或复制文件。歌词与 Codex 额度功能仅在使用时向相应服务发起请求。
+
+Runtime 侧栏只读访问本机 Codex 会话 JSONL、名称索引及当前日志数据库，不修改 Codex 数据、不上传对话，也不读取 `auth.json`。历史读取与事件详情均有大小限制；未落盘或未公开的 Runtime 信息不会被推算出来。
 
 ## 技术栈
 

@@ -1,6 +1,6 @@
-// Windows/WebView2 smoke test for this repository's own debug binary.
+// Windows/WebView2 smoke test for this repository's own binary.
 // npm run tauri build -- --debug --no-bundle
-// node scripts/test-tray-native.cjs [--hold]
+// node scripts/test-tray-native.cjs [--hold] [--release]
 // Does not change saved preferences; the temporary DevTools endpoint is loopback-only.
 const { chromium } = require('../target/tray-qa-tools/node_modules/playwright');
 const { spawn } = require('node:child_process');
@@ -39,7 +39,8 @@ async function main() {
   await new Promise(resolve => probe.listen(0, '127.0.0.1', resolve));
   const port = probe.address().port;
   await new Promise(resolve => probe.close(resolve));
-  const child = spawn(path.resolve(__dirname, '../src-tauri/target/debug/wisland.exe'), [], {
+  const profile = process.argv.includes('--release') ? 'release' : 'debug';
+  const child = spawn(path.resolve(__dirname, `../src-tauri/target/${profile}/wisland.exe`), [], {
     windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'], cwd: path.resolve(__dirname, '..'),
     env: { ...process.env,
       ...(runtimeHome ? { CODEX_HOME: runtimeHome } : {}),
@@ -165,6 +166,7 @@ async function main() {
       assert.equal(await popup.locator('[data-section="technical"]').getAttribute('open'), null);
       await popup.locator('#tab-raw').click();
       assert.ok((await popup.locator('#inspector-content').textContent()).includes('function_call'));
+      assert.equal(await popup.locator('[data-section="raw"]').getAttribute('data-expanded'), 'true', 'native raw tab starts fully expanded');
       await popup.locator('#tab-overview').click();
       await popup.keyboard.press('Escape');
       await popup.locator('#inspector').waitFor({ state: 'hidden' });
@@ -250,6 +252,10 @@ async function main() {
     const initiallyFocused = await popup.evaluate(() => window.__TAURI__.window.getCurrentWindow().isFocused());
     await invoke('open_settings');
     const settingsPage = await until(() => pages().find(page => page.url().includes('/settings.html')), 'settings focus target');
+    await settingsPage.waitForFunction(version => {
+      const labels = [...document.querySelectorAll('[data-app-version]')];
+      return labels.length === 2 && labels.every(label => label.textContent === version);
+    }, require('../package.json').version);
     // The first call creates a WebView asynchronously; request activation only
     // after that WebView is ready, using the existing settings-window path.
     await invoke('open_settings');
