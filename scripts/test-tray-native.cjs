@@ -7,6 +7,7 @@ const { spawn } = require('node:child_process');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const net = require('node:net');
+const fs = require('node:fs/promises');
 
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function until(fn, label, timeout = 15000) {
@@ -19,6 +20,19 @@ async function until(fn, label, timeout = 15000) {
   throw new Error(`Timed out: ${label}`);
 }
 async function main() {
+  let runtimeHome;
+  let runtimeFile;
+  const runtimeThreadId = '019a6b3c-1234-5678-9abc-0123456789ab';
+  const record = (type, payload) => JSON.stringify({ timestamp: '2026-11-09T00:00:00Z', type, payload }) + '\n';
+  if (process.argv.includes('--runtime')) {
+    runtimeHome = path.resolve(__dirname, `../target/runtime-native-qa-${Date.now()}`);
+    await fs.mkdir(path.join(runtimeHome, 'sessions'), { recursive: true });
+    runtimeFile = path.join(runtimeHome, `sessions/rollout-2026-11-09T12-30-00-${runtimeThreadId}.jsonl`);
+    await fs.writeFile(path.join(runtimeHome, 'session_index.jsonl'), JSON.stringify({ id: runtimeThreadId, thread_name: 'Runtime 侧栏回归会话' }) + '\n');
+    await fs.writeFile(runtimeFile, record('event_msg', { type: 'task_started', turn_id: 'qa-turn' })
+      + record('event_msg', { type: 'user_message', message: '测试中文增量轨迹' })
+      + record('response_item', { type: 'function_call', name: 'exec_command', call_id: 'qa-call', arguments: '{"cmd":"npm test"}' }));
+  }
   const probe = net.createServer();
   await new Promise(resolve => probe.listen(0, '127.0.0.1', resolve));
   const port = probe.address().port;
@@ -26,6 +40,7 @@ async function main() {
   const child = spawn(path.resolve(__dirname, '../src-tauri/target/debug/wisland.exe'), [], {
     windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'], cwd: path.resolve(__dirname, '..'),
     env: { ...process.env,
+      ...(runtimeHome ? { CODEX_HOME: runtimeHome } : {}),
       WEBVIEW2_USER_DATA_FOLDER: path.resolve(__dirname, '../target/tray-native-qa-profile'),
       WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-address=127.0.0.1 --remote-debugging-port=${port}`,
     },
@@ -42,16 +57,45 @@ async function main() {
     await popup.waitForFunction(() => document.documentElement.dataset.acrylic !== undefined);
     const invoke = (command, args) => main.evaluate(({ command, args }) => window.__TAURI__.core.invoke(command, args), { command, args });
     assert.equal(await main.evaluate(() => window.__TAURI__.app.getVersion()), require('../package.json').version, 'installed runtime version must match the build metadata');
+    if (process.argv.includes('--display')) {
+      await invoke('set_display_mode', { mode: 'capsule' });
+      await invoke('start_drag');
+      await main.evaluate(async () => {
+        const appWindow = window.__TAURI__.window.getCurrentWindow();
+        const position = await appWindow.outerPosition();
+        await appWindow.setPosition(new window.__TAURI__.dpi.PhysicalPosition(position.x + 100, position.y + 150));
+      });
+      await invoke('end_drag');
+      await pause(700);
+      async function assertCentered(label) {
+        const geometry = await main.evaluate(async () => {
+          const appWindow = window.__TAURI__.window.getCurrentWindow();
+          return { position: await appWindow.outerPosition(), size: await appWindow.outerSize(), monitor: await window.__TAURI__.window.currentMonitor() };
+        });
+        const { position, size, monitor } = geometry;
+        assert.ok(Math.abs(position.x + size.width / 2 - (monitor.position.x + monitor.size.width / 2)) <= 2, `${label}: horizontal center`);
+        assert.ok(Math.abs(position.y - monitor.position.y) <= 2, `${label}: monitor top`);
+      }
+      await assertCentered('drag return');
+      await invoke('set_minimized', { minimized: true });
+      await pause(500);
+      await assertCentered('minimized bar');
+      await invoke('set_minimized', { minimized: false });
+      await pause(500);
+      await assertCentered('restored capsule');
+      console.log('PASS: native capsule drag return / minimized / restored positioning');
+    }
     const visible = () => popup.evaluate(() => window.__TAURI__.window.getCurrentWindow().isVisible());
     const sample = () => popup.evaluate(async () => {
       const window = globalThis.__TAURI__.window.getCurrentWindow();
-      const [visible, position, size, inner, decorated, scale] = await Promise.all([
-        window.isVisible(), window.outerPosition(), window.outerSize(), window.innerSize(), window.isDecorated(), window.scaleFactor(),
+      const [visible, inner, decorated, scale] = await Promise.all([
+        window.isVisible(), window.innerSize(), window.isDecorated(), window.scaleFactor(),
       ]);
-      return { visible, x: position.x, y: position.y, width: size.width, height: size.height, innerWidth: inner.width, innerHeight: inner.height, decorated, scale, rows: document.querySelectorAll('.quota-row').length };
+      const [x, y, width, height] = await globalThis.__TAURI__.core.invoke('get_tray_geometry');
+      return { visible, x, y, width, height, innerWidth: inner.width, innerHeight: inner.height, decorated, scale, rows: document.querySelectorAll('.quota-row').length };
     });
     async function recordTransition(open) {
-      const frames = [];
+      const frames = [await sample()];
       const started = Date.now();
       const recording = (async () => {
         while (Date.now() - started < 650) {
@@ -64,28 +108,23 @@ async function main() {
       return frames.filter(frame => frame.visible);
     }
     function assertSlide(frames, open, motion) {
-      // WS_VISIBLE includes the cloaked warm-up surface. Begin motion assertions
-      // at its lowest position, after the hidden full-size surface is prepared.
+      // WS_VISIBLE also includes the cloaked first-frame composition.
       if (open && motion && frames.length) {
-        const lowest = Math.max(...frames.map(frame => frame.y));
-        frames = frames.slice(frames.findIndex(frame => frame.y === lowest));
+        const rightmost = Math.max(...frames.map(frame => frame.x));
+        frames = frames.slice(frames.findIndex(frame => frame.x === rightmost));
       }
-      assert.ok(frames.length > 0, 'capture visible animation frames');
-      assert.ok(frames.every(frame => !frame.decorated), 'never enable native decorations during animation');
-      assert.ok(frames.every(frame => frame.x === frames[0].x), 'movement must be vertical');
-      assert.ok(frames.every(frame => frame.width === frames[0].width), 'viewport width must remain stable');
-      // Live quota data can remove a row when an account has no 5h limit. Measure
-      // the bottom edge so that this legitimate resize is not mistaken for drift.
-      const bottom = frame => frame.y + frame.height;
+      assert.ok(frames.length > 0, 'capture native animation frames');
+      assert.ok(frames.every(f => !f.decorated), 'no native title bar');
+      assert.ok(frames.every(f => f.y === frames[0].y), 'movement must be horizontal');
+      assert.ok(frames.every(f => f.height === frames[0].height), 'full work-area height remains fixed');
+      const right = frames[0].x + frames[0].width;
+      assert.ok(frames.every(f => f.x + f.width === right), `screen right edge is a fixed clipping boundary: ${JSON.stringify(frames)}`);
       for (let i = 1; i < frames.length; i++) {
-        const removedRow = Math.abs(frames[i].y - frames[i - 1].y - 80 * frames[i].scale) <= 1 && Math.abs(frames[i].height - frames[i - 1].height + 80 * frames[i].scale) <= 1;
-        // Height changes are now intentional: the native viewport is the clip.
-        // A live quota row-count change can also relocate the final resting panel.
-        assert.ok(open ? frames[i].y <= frames[i - 1].y || frames[i].rows !== frames[i - 1].rows || removedRow : frames[i].y >= frames[i - 1].y,
-          `slide must move ${open ? 'up' : 'down'}: ${JSON.stringify(frames.map(frame => frame.y))}`);
+        assert.ok(open ? frames[i].x <= frames[i - 1].x : frames[i].x >= frames[i - 1].x,
+          'slide must move continuously towards its endpoint');
       }
-      if (motion) assert.ok(new Set(frames.map(frame => frame.y)).size > 1, 'native surface must actually move');
-      console.log(`${open ? 'Upward entrance' : 'Downward exit'} Y samples:`, frames.map(frame => frame.y).join(', '));
+      if (motion) assert.ok(new Set(frames.map(f => f.x)).size > 1, 'native surface must actually move');
+      console.log(open ? 'Leftward entrance X:' : 'Rightward exit X:', frames.map(f => f.x).join(', '));
     }
     function assertRest(actual, expected, message) {
       assert.deepEqual(
@@ -94,6 +133,33 @@ async function main() {
     }
     await invoke('set_display_mode', { mode: 'tray' });
     assert.equal(await visible(), false, 'tray mode must not show a persistent window');
+    if (runtimeHome) {
+      const initial = await until(async () => { const value = await invoke('get_runtime_snapshot'); return value.events.length === 3 && value; }, 'initial runtime fixture');
+      assert.equal(initial.sessions[0].label, 'Runtime 侧栏回归会话', 'rollout UUID maps to Codex title');
+      await fs.appendFile(path.join(runtimeHome, 'session_index.jsonl'), JSON.stringify({ id: runtimeThreadId, thread_name: '会话重命名验证' }) + '\n');
+      await until(async () => (await invoke('get_runtime_snapshot')).sessions[0].label === '会话重命名验证', 'rename synchronization');
+      await popup.waitForFunction(() => document.querySelector('#runtime-session option').textContent.includes('会话重命名验证'));
+      const line = Buffer.from(record('response_item', { type: 'function_call_output', call_id: 'qa-call', output: '中文执行结果' }));
+      const split = line.indexOf(Buffer.from('中')) + 1; // split inside a UTF-8 character
+      await fs.appendFile(runtimeFile, line.subarray(0, split));
+      await pause(700);
+      assert.equal((await invoke('get_runtime_snapshot')).events.length, 3, 'an incomplete UTF-8 line must not be parsed');
+      await fs.appendFile(runtimeFile, line.subarray(split));
+      const appended = await until(async () => { const value = await invoke('get_runtime_snapshot'); return value.events.length === 4 && value; }, 'incremental append');
+      assert.equal(appended.events[3].summary, '中文执行结果');
+      assert.equal(appended.events[2].step, appended.events[3].step);
+      await popup.waitForFunction(() => document.querySelectorAll('.event-row').length === 4);
+      const inspected = await invoke('get_runtime_event', { sessionId: appended.sessionId, id: appended.events[2].id });
+      assert.equal(inspected.related[0].detail.content, '中文执行结果');
+      await assert.rejects(invoke('select_runtime_session', { id: '../../auth.json' }), /会话不在/);
+      await invoke('select_runtime_session', { id: initial.sessionId });
+      const second = path.join(runtimeHome, 'sessions/rollout-test-b.jsonl');
+      await fs.writeFile(second, record('event_msg', { type: 'task_started', turn_id: 'qa-second' }));
+      await until(async () => (await invoke('get_runtime_snapshot')).sessions.length === 2, 'new session discovery');
+      assert.equal((await invoke('get_runtime_snapshot')).sessionId, initial.sessionId, 'pinned session must not switch');
+      assert.notEqual((await invoke('select_runtime_session', { id: null })).sessionId, initial.sessionId, 'auto mode chooses latest active log');
+      console.log('PASS: native JSONL append / split UTF-8 / tool-result association / path rejection / pinned and automatic sessions');
+    }
     // Stabilize the first account response before testing motion geometry. A
     // weekly-only account legitimately removes the initial placeholder 5h row.
     for (let attempt = 0; attempt < 50; attempt++) {
@@ -111,11 +177,40 @@ async function main() {
     if (appearance.acrylic) assert.equal(await popup.locator('#details').evaluate(el => getComputedStyle(el).backgroundColor), 'rgba(0, 0, 0, 0)');
     // Let initial quota loading settle before measuring fixed-size animation frames.
     await pause(500);
+    // Focus can be taken by the terminal/test runner during setup. Re-open just
+    // before recording; an already-visible panel is not supposed to replay motion.
+    await invoke('set_tray_expanded', { expanded: true });
+    await pause(350);
+    assert.equal(await visible(), true, 'sidebar must be visible before recording its exit');
     assertSlide(await recordTransition(false), false, appearance.motion);
     await until(async () => !(await visible()), 'close animation');
     assertSlide(await recordTransition(true), true, appearance.motion);
     await until(visible, 'upward entrance');
     const rest = await sample();
+    const monitor = await popup.evaluate(() => window.__TAURI__.window.currentMonitor());
+    assert.equal(rest.x + rest.width, monitor.workArea.position.x + monitor.workArea.size.width, 'resting outer window ends exactly at work-area right edge');
+    assert.ok(rest.y >= monitor.workArea.position.y && rest.y + rest.height <= monitor.workArea.position.y + monitor.workArea.size.height, 'sidebar stays above taskbar');
+    assert.ok(Math.abs(rest.innerWidth / rest.scale - 525) <= 1, 'content width stays 525 logical pixels');
+    const initiallyFocused = await popup.evaluate(() => window.__TAURI__.window.getCurrentWindow().isFocused());
+    await invoke('open_settings');
+    const settingsPage = await until(() => pages().find(page => page.url().includes('/settings.html')), 'settings focus target');
+    // The first call creates a WebView asynchronously; request activation only
+    // after that WebView is ready, using the existing settings-window path.
+    await invoke('open_settings');
+    await until(() => settingsPage.evaluate(() => window.__TAURI__.window.getCurrentWindow().isVisible()), 'settings is visible');
+    // Windows may deny foreground activation to a background test process.
+    // Check the actual contract: the sidebar remains visible while unfocused,
+    // regardless of whether settings or the external runner owns the foreground.
+    await until(async () => !(await popup.evaluate(() => window.__TAURI__.window.getCurrentWindow().isFocused())), 'sidebar is unfocused');
+    await pause(350);
+    assert.equal(await visible(), true, 'an unfocused sidebar must remain visible');
+    console.log(`PASS: unfocused sidebar stays visible (${initiallyFocused ? 'focus transition observed' : 'Windows kept the test process in the background'})`);
+    const settingsClosed = settingsPage.waitForEvent('close');
+    await settingsPage.evaluate(() => window.__TAURI__.window.getCurrentWindow().close()).catch(error => {
+      // Closing the native WebView can destroy the IPC reply context first.
+      if (!settingsPage.isClosed()) throw error;
+    });
+    await settingsClosed;
     await invoke('set_tray_expanded', { expanded: true });
     await pause(300);
     assertRest(await sample(), rest, 'clicking an open popup must not replay or drift its position');

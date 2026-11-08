@@ -11,6 +11,8 @@ pub mod settings;
 mod tray_mode;
 mod tray_effects;
 mod window;
+mod display;
+mod runtime;
 
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -65,6 +67,8 @@ pub fn run() {
             tray_mode::set_startup_mode, tray_mode::get_tray_snapshot,
             tray_mode::set_tray_expanded, tray_mode::refresh_tray_quota,
             tray_mode::get_tray_appearance,
+            tray_mode::get_tray_geometry,
+            runtime::get_runtime_snapshot, runtime::select_runtime_session, runtime::get_runtime_event,
             settings::open_github_profile,
             settings::set_appearance_preferences,
             settings::get_lyric_offset_players, settings::set_lyric_offset_enabled,
@@ -103,13 +107,8 @@ pub fn run() {
             // Explicit WM_SETICON data keeps Task Manager from reusing the former Eisland icon.
             window.set_icon(Image::from_bytes(include_bytes!("../icons/icon.png"))?)?;
 
-            let scale = window.scale_factor().unwrap_or(1.0);
-            let screen_w = if let Ok(Some(monitor)) = window.current_monitor() {
-                monitor.size().width as f64 / monitor.scale_factor()
-            } else { 1920.0 };
-
-            let home_x = (screen_w - WIN_W) / 2.0;
-            let _ = window.set_position(tauri::LogicalPosition::new(home_x, TOP_MARGIN));
+            let (home_x, home_y) = display::home(&window, WIN_W);
+            let _ = window.set_position(tauri::LogicalPosition::new(home_x, home_y));
             let _ = window.set_size(tauri::LogicalSize::new(WIN_W, WIN_H_DEFAULT));
 
             let hwnd = HWND(window.hwnd().unwrap().0);
@@ -197,7 +196,6 @@ pub fn run() {
                 music_expanded: music_expanded.clone(),
                 is_minimized: is_minimized.clone(),
                 expand_anim_id: expand_anim_id.clone(),
-                screen_w,
                 indicator_color: indicator_color.clone(),
                 capsule_opacity: capsule_opacity.clone(),
                 capsule_scale: capsule_scale.clone(),
@@ -227,6 +225,8 @@ pub fn run() {
 
             // --- 系统托盘 ---
             tray_mode::setup(app.handle())?;
+            runtime::setup(app.handle());
+            display::watch(window.clone());
 
             // --- 鼠标监控线程 ---
             let win_m = window.clone();
@@ -254,6 +254,7 @@ pub fn run() {
                 let mut left_capsule_at: Option<Instant> = None;
 
                 loop {
+                    let scale = display::scale(hwnd);
                     if tray_mode_m.load(Ordering::Relaxed) {
                         was_on_capsule = false;
                         left_capsule_at = None;
@@ -973,7 +974,6 @@ pub struct IslandState {
     pub music_expanded: Arc<AtomicBool>,
     pub is_minimized: Arc<AtomicBool>,
     pub expand_anim_id: Arc<AtomicU64>,
-    pub screen_w: f64,
     pub indicator_color: Arc<Mutex<String>>,
     pub capsule_opacity: Arc<Mutex<f64>>,
     pub capsule_scale: Arc<Mutex<f64>>,

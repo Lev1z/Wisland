@@ -38,7 +38,7 @@ pub struct TrayState {
     rest_position: Mutex<Option<tauri::PhysicalPosition<i32>>>,
     appearance_initialized: AtomicBool,
     warming: AtomicBool,
-    full_height: std::sync::atomic::AtomicI32,
+    full_width: std::sync::atomic::AtomicI32,
 }
 
 impl Default for TrayState {
@@ -59,7 +59,7 @@ impl Default for TrayState {
             rest_position: Mutex::new(None),
             appearance_initialized: AtomicBool::new(false),
             warming: AtomicBool::new(false),
-            full_height: std::sync::atomic::AtomicI32::new(0),
+            full_width: std::sync::atomic::AtomicI32::new(0),
         }
     }
 }
@@ -95,6 +95,25 @@ pub fn get_tray_snapshot(state: tauri::State<'_, TrayState>) -> TraySnapshot {
 #[tauri::command]
 pub fn get_tray_appearance(state: tauri::State<'_, TrayState>) -> tray_effects::Appearance {
     *state.appearance.lock().unwrap()
+}
+
+// A single native read is necessary for geometry diagnostics: separate position /
+// size IPC calls can straddle animation frames and report an impossible rectangle.
+#[tauri::command]
+pub fn get_tray_geometry(app: tauri::AppHandle) -> Result<(i32, i32, i32, i32), String> {
+    let panel = app
+        .get_webview_window("codex-tray")
+        .ok_or("托盘窗口不可用")?;
+    let hwnd = panel.hwnd().map_err(|e| e.to_string())?;
+    let mut rect = windows::Win32::Foundation::RECT::default();
+    unsafe { windows::Win32::UI::WindowsAndMessaging::GetWindowRect(hwnd, &mut rect) }
+        .map_err(|e| e.to_string())?;
+    Ok((
+        rect.left,
+        rect.top,
+        rect.right - rect.left,
+        rect.bottom - rect.top,
+    ))
 }
 
 fn sync_appearance(
@@ -146,6 +165,10 @@ pub fn switch_mode(app: &tauri::AppHandle, mode: DisplayMode) -> Result<(), Stri
             }
         }
     }
+    if let Some(tray) = app.tray_by_id("wisland") {
+        tray.set_menu(Some(build_tray_menu(app, mode).map_err(|e| e.to_string())?))
+            .map_err(|e| e.to_string())?;
+    }
     let _ = app.emit("display-mode-changed", mode);
     Ok(())
 }
@@ -155,60 +178,33 @@ pub async fn set_display_mode(app: tauri::AppHandle, mode: DisplayMode) -> Resul
     switch_mode(&app, mode)
 }
 
-fn panel_height(snapshot: &TraySnapshot) -> f64 {
-    let count = if snapshot.quota.available {
-        usize::from(snapshot.quota.five_hour.is_some())
-            + usize::from(snapshot.quota.weekly.is_some())
-    } else {
-        2
-    };
-    144.0 + (count.max(1) as f64) * 80.0
-}
-
 // Physical coordinates, including negative origins on secondary monitors.
-fn popup_position(
-    area: (f64, f64, f64, f64),
-    size: (f64, f64),
-    anchor: Option<(f64, f64, f64, f64)>,
-    gap: f64,
-) -> (i32, i32) {
-    let (left, top, width, height) = area;
-    let (panel_width, panel_height) = size;
-    let max_x = (left + width - panel_width - gap).max(left);
-    let max_y = (top + height - panel_height - gap).max(top);
-    let (x, y) = if let Some((icon_x, icon_y, icon_width, icon_height)) = anchor {
-        let above = icon_y - panel_height - gap;
-        (
-            icon_x + icon_width / 2.0 - panel_width / 2.0,
-            if above >= top {
-                above
-            } else {
-                icon_y + icon_height + gap
-            },
-        )
-    } else {
-        (max_x, max_y)
-    };
+fn sidebar_bounds(
+    left: i32,
+    top: i32,
+    right: i32,
+    bottom: i32,
+    scale: f64,
+) -> (i32, i32, u32, u32) {
+    let width = ((525.0 * scale).round() as i32).min(right - left).max(1);
     (
-        x.clamp(left, max_x).round() as i32,
-        y.clamp(top, max_y).round() as i32,
+        right - width,
+        top,
+        width as u32,
+        (bottom - top).max(1) as u32,
     )
 }
 
 struct PanelPlacement {
     position: tauri::PhysicalPosition<i32>,
     size: tauri::PhysicalSize<u32>,
-    clip_bottom: i32,
+    clip_right: i32,
 }
 
 fn panel_placement(app: &tauri::AppHandle) -> Result<PanelPlacement, String> {
     let panel = app
         .get_webview_window("codex-tray")
         .ok_or("托盘窗口不可用")?;
-    let state = app.state::<TrayState>();
-    let snapshot = state.snapshot.lock().unwrap().clone();
-    let width = 344.0;
-    let height = panel_height(&snapshot);
     // Shell's actual icon rectangle locates the correct monitor, including overflow trays.
     let anchor = app
         .tray_by_id("wisland")
@@ -226,7 +222,7 @@ fn panel_placement(app: &tauri::AppHandle) -> Result<PanelPlacement, String> {
     .ok_or("无法定位显示器")?;
     let scale = monitor.scale_factor();
     let area = monitor.work_area();
-    let clip_bottom = tray_effects::taskbar_top(
+    let bottom = tray_effects::taskbar_top(
         windows::Win32::Foundation::RECT {
             left: monitor.position().x,
             top: monitor.position().y,
@@ -235,30 +231,24 @@ fn panel_placement(app: &tauri::AppHandle) -> Result<PanelPlacement, String> {
         },
         area.position.y + area.size.height as i32,
     );
-    let anchor = anchor.map(|rect| {
-        let p = rect.position.to_physical::<i32>(1.0);
-        let s = rect.size.to_physical::<u32>(1.0);
-        (p.x as f64, p.y as f64, s.width as f64, s.height as f64)
-    });
-    let (x, y) = popup_position(
-        (
-            area.position.x as f64,
-            area.position.y as f64,
-            area.size.width as f64,
-            (clip_bottom - area.position.y) as f64,
-        ),
-        (width * scale, height * scale),
-        anchor,
-        16.0 * scale,
-    );
+    let right = area.position.x + area.size.width as i32;
+    let (_, y, width, height) =
+        sidebar_bounds(area.position.x, area.position.y, right, bottom, scale);
+    // Tauri set_size takes CLIENT size; undecorated Windows windows still have
+    // invisible resize margins. Include those in placement and subtract them
+    // from available height, otherwise the final frame extends into the taskbar.
+    let outer = panel.outer_size().map_err(|e| e.to_string())?;
+    let inner = panel.inner_size().map_err(|e| e.to_string())?;
+    let current_scale = panel.scale_factor().map_err(|e| e.to_string())?;
+    let frame_w =
+        (outer.width.saturating_sub(inner.width) as f64 * scale / current_scale).round() as u32;
+    let frame_h =
+        (outer.height.saturating_sub(inner.height) as f64 * scale / current_scale).round() as u32;
+    let x = right - (width + frame_w) as i32;
     Ok(PanelPlacement {
         position: tauri::PhysicalPosition::new(x, y),
-        size: tauri::PhysicalSize::new(
-            (width * scale).round() as u32,
-            (height * scale).round() as u32,
-        ),
-        // The monitor work area ends at the taskbar, not at the screen bottom.
-        clip_bottom,
+        size: tauri::PhysicalSize::new(width, height.saturating_sub(frame_h).max(1)),
+        clip_right: right,
     })
 }
 
@@ -268,8 +258,8 @@ fn position_panel(app: &tauri::AppHandle) -> Result<(), String> {
         .ok_or("托盘窗口不可用")?;
     let placement = panel_placement(app)?;
     panel.set_size(placement.size).map_err(|e| e.to_string())?;
-    app.state::<TrayState>().full_height.store(
-        panel.outer_size().map_err(|e| e.to_string())?.height as i32,
+    app.state::<TrayState>().full_width.store(
+        panel.outer_size().map_err(|e| e.to_string())?.width as i32,
         Ordering::SeqCst,
     );
     panel
@@ -277,6 +267,24 @@ fn position_panel(app: &tauri::AppHandle) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     *app.state::<TrayState>().rest_position.lock().unwrap() = Some(placement.position);
     Ok(())
+}
+
+// Called on the UI thread by the shared display watcher. Never opens a hidden sidebar.
+pub(crate) fn display_changed(app: &tauri::AppHandle) {
+    let state = app.state::<TrayState>();
+    if state.expanded.load(Ordering::SeqCst) {
+        if state.warming.load(Ordering::SeqCst) {
+            let _ = request_transition(app, true);
+        } else {
+            state.transition_id.fetch_add(1, Ordering::SeqCst);
+            state.transitioning.store(false, Ordering::SeqCst);
+            if let Err(error) = position_panel(app) {
+                report_error(app, error);
+            }
+        }
+    } else if state.transitioning.load(Ordering::SeqCst) {
+        let _ = hide_details(app);
+    }
 }
 
 fn hide_details(app: &tauri::AppHandle) -> Result<(), String> {
@@ -352,8 +360,8 @@ fn begin_transition(app: &tauri::AppHandle, id: u64, open: bool) -> Result<(), S
     let rest = if open {
         if !visible || !was_transitioning {
             panel.set_size(placement.size).map_err(|e| e.to_string())?;
-            state.full_height.store(
-                panel.outer_size().map_err(|e| e.to_string())?.height as i32,
+            state.full_width.store(
+                panel.outer_size().map_err(|e| e.to_string())?.width as i32,
                 Ordering::SeqCst,
             );
         }
@@ -363,13 +371,13 @@ fn begin_transition(app: &tauri::AppHandle, id: u64, open: bool) -> Result<(), S
         state.rest_position.lock().unwrap().unwrap_or(current)
     };
     let slide = tray_effects::Slide {
-        x: rest.x,
-        from_y: if visible {
-            current.y
+        y: rest.y,
+        from_x: if visible {
+            current.x
         } else {
-            placement.clip_bottom - tray_effects::minimum_viewport_height(&panel)?
+            placement.clip_right - tray_effects::minimum_viewport_width(&panel)?
         },
-        to_y: if open { rest.y } else { placement.clip_bottom },
+        to_x: if open { rest.x } else { placement.clip_right },
         open,
     };
     let motion = appearance.motion && (!open || !visible || was_transitioning);
@@ -384,8 +392,8 @@ fn begin_transition(app: &tauri::AppHandle, id: u64, open: bool) -> Result<(), S
         tray_effects::reveal(
             &panel,
             slide.position(if motion { 0.0 } else { 1.0 }),
-            placement.clip_bottom,
-            state.full_height.load(Ordering::SeqCst),
+            placement.clip_right,
+            state.full_width.load(Ordering::SeqCst),
             false,
         )?;
         panel.show().map_err(|e| e.to_string())?;
@@ -403,13 +411,13 @@ fn begin_transition(app: &tauri::AppHandle, id: u64, open: bool) -> Result<(), S
                     tray_effects::reveal(
                         &panel,
                         slide.position(if motion { 0.0 } else { 1.0 }),
-                        placement.clip_bottom,
-                        state.full_height.load(Ordering::SeqCst),
+                        placement.clip_right,
+                        state.full_width.load(Ordering::SeqCst),
                         true,
                     )?;
                     state.warming.store(false, Ordering::SeqCst);
                     if motion {
-                        animate_slide(scheduled.clone(), id, slide, placement.clip_bottom);
+                        animate_slide(scheduled.clone(), id, slide, placement.clip_right);
                     } else {
                         finish_transition(&scheduled, id, true)?;
                     }
@@ -428,17 +436,17 @@ fn begin_transition(app: &tauri::AppHandle, id: u64, open: bool) -> Result<(), S
         tray_effects::reveal(
             &panel,
             slide.position(if motion { 0.0 } else { 1.0 }),
-            placement.clip_bottom,
-            state.full_height.load(Ordering::SeqCst),
+            placement.clip_right,
+            state.full_width.load(Ordering::SeqCst),
             true,
         )?;
         panel.show().map_err(|e| e.to_string())?;
         panel.set_focus().map_err(|e| e.to_string())?;
     }
-    if !motion || slide.from_y == slide.to_y {
+    if !motion || slide.from_x == slide.to_x {
         return finish_transition(app, id, open);
     }
-    animate_slide(app.clone(), id, slide, placement.clip_bottom);
+    animate_slide(app.clone(), id, slide, placement.clip_right);
     Ok(())
 }
 
@@ -451,7 +459,7 @@ fn finish_transition(app: &tauri::AppHandle, id: u64, open: bool) -> Result<(), 
         .get_webview_window("codex-tray")
         .ok_or("托盘窗口不可用")?;
     if open {
-        // A quota refresh during the animation may have changed the number of rows.
+        // Re-read the work area in case display settings changed during the slide.
         position_panel(app)?;
     } else {
         panel.hide().map_err(|e| e.to_string())?;
@@ -460,14 +468,12 @@ fn finish_transition(app: &tauri::AppHandle, id: u64, open: bool) -> Result<(), 
     if open {
         if tray_effects::is_foreground(&panel) {
             let _ = panel.emit("tray-expanded", true);
-        } else {
-            request_transition(app, false)?;
         }
     }
     Ok(())
 }
 
-fn animate_slide(app: tauri::AppHandle, id: u64, slide: tray_effects::Slide, clip_bottom: i32) {
+fn animate_slide(app: tauri::AppHandle, id: u64, slide: tray_effects::Slide, clip_right: i32) {
     tauri::async_runtime::spawn_blocking(move || {
         let started = Instant::now();
         loop {
@@ -493,10 +499,10 @@ fn animate_slide(app: tauri::AppHandle, id: u64, slide: tray_effects::Slide, cli
                             tray_effects::reveal(
                                 &panel,
                                 slide.position(progress),
-                                clip_bottom,
+                                clip_right,
                                 handle
                                     .state::<TrayState>()
-                                    .full_height
+                                    .full_width
                                     .load(Ordering::SeqCst),
                                 slide.open,
                             )
@@ -651,15 +657,31 @@ fn publish(app: &tauri::AppHandle) {
     let _ = app.emit("tray-snapshot", &snapshot);
 }
 
-pub fn setup(app: &tauri::AppHandle) -> tauri::Result<()> {
-    app.manage(TrayState::default());
-    let menu = MenuBuilder::new(app)
-        .item(&MenuItemBuilder::with_id("capsule", "显示胶囊").build(app)?)
-        .item(&MenuItemBuilder::with_id("tray-mode", "切换至托盘态").build(app)?)
-        .item(&MenuItemBuilder::with_id("settings", "设置").build(app)?)
+fn tray_menu_actions(mode: DisplayMode) -> Vec<(&'static str, &'static str)> {
+    let mut actions = vec![("capsule", "显示胶囊")];
+    if mode == DisplayMode::Capsule {
+        actions.push(("tray-mode", "切换至托盘态"));
+    }
+    actions
+}
+
+fn build_tray_menu(
+    app: &tauri::AppHandle,
+    mode: DisplayMode,
+) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
+    let mut menu = MenuBuilder::new(app);
+    for (id, label) in tray_menu_actions(mode) {
+        menu = menu.item(&MenuItemBuilder::with_id(id, label).build(app)?);
+    }
+    menu.item(&MenuItemBuilder::with_id("settings", "设置").build(app)?)
         .separator()
         .item(&MenuItemBuilder::with_id("quit", "退出").build(app)?)
-        .build()?;
+        .build()
+}
+
+pub fn setup(app: &tauri::AppHandle) -> tauri::Result<()> {
+    app.manage(TrayState::default());
+    let menu = build_tray_menu(app, get_display_mode(app.clone()))?;
     TrayIconBuilder::with_id("wisland")
         .icon(Image::from_bytes(include_bytes!("../icons/32x32.png"))?)
         .menu(&menu)
@@ -712,7 +734,7 @@ pub fn setup(app: &tauri::AppHandle) -> tauri::Result<()> {
             tauri::WebviewUrl::App("tray.html".into()),
         )
         .title("Wisland · Codex")
-        .inner_size(344.0, 304.0)
+        .inner_size(525.0, 700.0)
         .visible(false)
         .focused(false)
         .decorations(false)
@@ -732,20 +754,8 @@ pub fn setup(app: &tauri::AppHandle) -> tauri::Result<()> {
                         // Alt+F4 must not destroy the only route back from a hidden capsule.
                         api.prevent_close();
                     }
-                    // Cached focus events can lag a newer show. Check the live HWND;
-                    // a genuine outside click must also dismiss during an entrance.
-                    let dismiss = matches!(event, tauri::WindowEvent::CloseRequested { .. })
-                        || (matches!(event, tauri::WindowEvent::Focused(false))
-                            && !handle_focus
-                                .state::<TrayState>()
-                                .warming
-                                .load(Ordering::SeqCst)
-                            && handle_focus.get_webview_window("codex-tray").is_some_and(
-                                |panel| {
-                                    panel.is_visible().unwrap_or(false)
-                                        && !tray_effects::is_foreground(&panel)
-                                },
-                            ));
+                    // A monitoring sidebar remains open when another application gains focus.
+                    let dismiss = matches!(event, tauri::WindowEvent::CloseRequested { .. });
                     if dismiss
                         && handle_focus
                             .state::<TrayState>()
@@ -830,37 +840,28 @@ mod tests {
     }
 
     #[test]
-    fn popup_anchors_above_the_actual_tray_icon() {
+    fn sidebar_uses_work_area_and_dpi_including_negative_origins() {
+        assert_eq!(sidebar_bounds(0, 0, 1920, 1040, 1.0), (1395, 0, 525, 1040));
         assert_eq!(
-            popup_position(
-                (0.0, 0.0, 1920.0, 1040.0),
-                (344.0, 304.0),
-                Some((1700.0, 1040.0, 32.0, 32.0)),
-                8.0
-            ),
-            (1544, 728)
+            sidebar_bounds(-1920, -100, 0, 940, 1.5),
+            (-788, -100, 788, 1040)
         );
+        assert_eq!(
+            sidebar_bounds(0, 40, 1920, 1080, 2.0),
+            (870, 40, 1050, 1040)
+        );
+        assert_eq!(sidebar_bounds(0, 0, 300, 400, 1.0), (0, 0, 300, 400));
     }
-
     #[test]
-    fn popup_clamps_to_negative_origin_monitor_and_handles_top_taskbar() {
-        assert_eq!(
-            popup_position(
-                (-1920.0, 0.0, 1920.0, 1040.0),
-                (344.0, 224.0),
-                Some((-40.0, 1040.0, 32.0, 32.0)),
-                8.0
-            ),
-            (-352, 808)
-        );
-        assert_eq!(
-            popup_position(
-                (0.0, 40.0, 1920.0, 1040.0),
-                (344.0, 224.0),
-                Some((1700.0, 0.0, 32.0, 32.0)),
-                8.0
-            ),
-            (1544, 40)
-        );
+    fn tray_mode_menu_does_not_offer_the_current_mode_again() {
+        assert!(!tray_menu_actions(DisplayMode::Tray)
+            .iter()
+            .any(|(id, _)| *id == "tray-mode"));
+        assert!(tray_menu_actions(DisplayMode::Tray)
+            .iter()
+            .any(|(id, _)| *id == "capsule"));
+        assert!(tray_menu_actions(DisplayMode::Capsule)
+            .iter()
+            .any(|(id, _)| *id == "tray-mode"));
     }
 }

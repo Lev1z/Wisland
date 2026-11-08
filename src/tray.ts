@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { initRuntime, closeInspector } from "./runtime";
 
 type QuotaWindow = { remainingPercent: number; resetsAt: number | null };
 type Snapshot = {
@@ -44,13 +45,12 @@ function render(value: Snapshot): void {
   const [phase, color] = phases[value.phase] ?? phases.stale;
   document.documentElement.style.setProperty("--status", color);
   el("phase").textContent = phase;
+  el("phase").title = "Codex 全局运行状态，不代表下方所选历史会话的状态";
   const { quota } = value;
   // A missing window on a successful response means no reported limit, not 0%.
   const rows: [string, QuotaWindow | null][] = [];
   if (!quota.available || quota.fiveHour) rows.push(["5-hour", quota.fiveHour]);
   if (!quota.available || quota.weekly) rows.push(["Weekly", quota.weekly]);
-  // Keep content geometry fixed while the native viewport reveals/hides it.
-  el("details").style.height = `${144 + Math.max(1, rows.length) * 80}px`;
 
   el("quota-rows").replaceChildren(...rows.map(([name, data]) => {
     const row = document.createElement("div");
@@ -96,7 +96,7 @@ async function command(name: string, args?: Record<string, unknown>): Promise<vo
 }
 
 el("settings").addEventListener("click", () => void command("open_settings"));
-el("restore").addEventListener("click", () => void command("set_display_mode", { mode: "capsule" }));
+el("hide-sidebar").addEventListener("click", () => void command("set_tray_expanded", { expanded: false }));
 el<HTMLButtonElement>("refresh").addEventListener("click", async () => {
   if (refreshing) return;
   refreshing = true;
@@ -107,7 +107,7 @@ el<HTMLButtonElement>("refresh").addEventListener("click", async () => {
   finally { refreshing = false; el<HTMLButtonElement>("refresh").disabled = false; if (snapshot) render(snapshot); }
 });
 window.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") void command("set_tray_expanded", { expanded: false });
+  if (event.key === "Escape" && !closeInspector()) void command("set_tray_expanded", { expanded: false });
 });
 window.addEventListener("contextmenu", (event) => event.preventDefault());
 
@@ -121,4 +121,5 @@ async function init(): Promise<void> {
   render(await invoke<Snapshot>("get_tray_snapshot"));
 }
 void init().catch(console.error);
+void initRuntime().catch(error => { el("runtime-notice").textContent = `日志连接失败：${String(error)}`; });
 window.setInterval(() => { if (snapshot) render(snapshot); }, 60_000);

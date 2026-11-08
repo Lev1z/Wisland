@@ -42,12 +42,12 @@ pub const OPEN_MS: u64 = 240;
 pub const CLOSE_MS: u64 = 170;
 
 /// Animate the live DWM surface, not an AnimateWindow snapshot of its non-client frame.
-/// Only position changes: decorations, shadow, glass margins and opacity stay intact.
+/// Position and clipping viewport change; decoration/material/opacity stay intact.
 #[derive(Clone, Copy)]
 pub struct Slide {
-    pub x: i32,
-    pub from_y: i32,
-    pub to_y: i32,
+    pub y: i32,
+    pub from_x: i32,
+    pub to_x: i32,
     pub open: bool,
 }
 
@@ -64,17 +64,17 @@ impl Slide {
             t
         };
         tauri::PhysicalPosition::new(
-            self.x,
-            (self.from_y as f64 + (self.to_y - self.from_y) as f64 * eased).round() as i32,
+            (self.from_x as f64 + (self.to_x - self.from_x) as f64 * eased).round() as i32,
+            self.y,
         )
     }
 }
 
-fn visible_height(y: i32, boundary: i32, height: i32) -> i32 {
-    (boundary - y).clamp(0, height)
+fn visible_width(x: i32, boundary: i32, width: i32) -> i32 {
+    (boundary - x).clamp(0, width)
 }
 
-pub fn minimum_viewport_height(panel: &tauri::WebviewWindow) -> Result<i32, String> {
+pub fn minimum_viewport_width(panel: &tauri::WebviewWindow) -> Result<i32, String> {
     Ok((16.0 * panel.scale_factor().map_err(|e| e.to_string())?).ceil() as i32)
 }
 
@@ -105,22 +105,22 @@ pub fn taskbar_top(monitor: RECT, fallback: i32) -> i32 {
     top
 }
 
-/// Use the native window's rectangular viewport as the clip. Its lower edge never
-/// crosses the taskbar. Unlike SetWindowRgn this keeps the DWM backdrop intact.
+/// Use the native rectangular viewport as a right-edge clip. The full height is
+/// already bounded above the taskbar. SetWindowRgn would break the DWM backdrop.
 pub fn reveal(
     panel: &tauri::WebviewWindow,
     position: tauri::PhysicalPosition<i32>,
     boundary: i32,
-    full_height: i32,
+    full_width: i32,
     opening: bool,
 ) -> Result<(), String> {
     let hwnd = panel.hwnd().map_err(|e| e.to_string())?;
-    let width = panel.outer_size().map_err(|e| e.to_string())?.width as i32;
-    let height = visible_height(position.y, boundary, full_height);
-    // Tao's non-client margins can yield a negative client height for tiny HWNDs.
+    let height = panel.outer_size().map_err(|e| e.to_string())?.height as i32;
+    let width = visible_width(position.x, boundary, full_width);
+    // Tao's non-client margins can yield a negative client width for tiny HWNDs.
     // Keep that terminal sliver cloaked instead of asking WebView/softbuffer to
-    // allocate an invalid surface. No pixels below the clip line are exposed.
-    if height < minimum_viewport_height(panel)? {
+    // allocate an invalid surface. No pixels past the clip line are exposed.
+    if width < minimum_viewport_width(panel)? {
         return cloak(panel, true);
     }
     let mut was_cloaked = 0u32;
@@ -147,8 +147,8 @@ pub fn reveal(
     .map_err(|e| e.to_string())?;
     let mut actual = RECT::default();
     unsafe { GetWindowRect(HWND(hwnd.0), &mut actual) }.map_err(|e| e.to_string())?;
-    if actual.bottom > boundary {
-        return Err("托盘动画视口越过任务栏边界".into());
+    if actual.right > boundary {
+        return Err("侧栏动画视口越过屏幕右边界".into());
     }
     if was_cloaked != 0 && opening {
         cloak(panel, false)?;
@@ -306,17 +306,17 @@ pub fn apply(panel: &tauri::WebviewWindow, previous: Option<Appearance>) -> Appe
 mod tests {
     use super::*;
     #[test]
-    fn clipping_never_crosses_taskbar_edge() {
+    fn clipping_never_crosses_screen_right_edge() {
         for boundary in [-100, 1040, 2080] {
             for height in [224, 304, 448, 608] {
                 for y in (boundary - height - 8)..=(boundary + 16) {
-                    let visible = visible_height(y, boundary, height);
+                    let visible = visible_width(y, boundary, height);
                     assert!((0..=height).contains(&visible));
                     if visible > 0 {
                         assert!(y + visible <= boundary);
                     }
                 }
-                assert_eq!(visible_height(boundary, boundary, height), 0);
+                assert_eq!(visible_width(boundary, boundary, height), 0);
             }
         }
     }
@@ -329,29 +329,29 @@ mod tests {
     }
 
     #[test]
-    fn slides_up_to_open_and_down_to_close_without_overshooting() {
+    fn slides_left_to_open_and_right_to_close_without_overshooting() {
         for scale in [1.0, 1.25, 1.5, 2.0] {
             let bottom = -200 + (304.0_f64 * scale).round() as i32;
             for open in [true, false] {
                 let slide = Slide {
-                    x: -400,
-                    from_y: if open { bottom } else { -200 },
-                    to_y: if open { -200 } else { bottom },
+                    y: -400,
+                    from_x: if open { bottom } else { -200 },
+                    to_x: if open { -200 } else { bottom },
                     open,
                 };
-                assert_eq!(slide.position(-1.0).y, slide.from_y);
-                assert_eq!(slide.position(2.0).y, slide.to_y);
-                let mut previous = slide.from_y;
+                assert_eq!(slide.position(-1.0).x, slide.from_x);
+                assert_eq!(slide.position(2.0).x, slide.to_x);
+                let mut previous = slide.from_x;
                 for frame in 0..=100 {
                     let position = slide.position(frame as f64 / 100.0);
-                    assert_eq!(position.x, -400);
-                    assert!((-200..=bottom).contains(&position.y));
+                    assert_eq!(position.y, -400);
+                    assert!((-200..=bottom).contains(&position.x));
                     assert!(if open {
-                        position.y <= previous
+                        position.x <= previous
                     } else {
-                        position.y >= previous
+                        position.x >= previous
                     });
-                    previous = position.y;
+                    previous = position.x;
                 }
             }
         }
@@ -360,18 +360,18 @@ mod tests {
     #[test]
     fn reversing_a_slide_starts_at_its_current_position() {
         let opening = Slide {
-            x: 20,
-            from_y: 124,
-            to_y: 100,
+            y: 20,
+            from_x: 124,
+            to_x: 100,
             open: true,
         };
         let closing = Slide {
-            from_y: opening.position(0.3).y,
-            to_y: 124,
+            from_x: opening.position(0.3).x,
+            to_x: 124,
             open: false,
             ..opening
         };
         assert_eq!(closing.position(0.0), opening.position(0.3));
-        assert_eq!(closing.position(1.0).y, 124);
+        assert_eq!(closing.position(1.0).x, 124);
     }
 }

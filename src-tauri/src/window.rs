@@ -1,6 +1,6 @@
 use crate::{
     logger, IslandState, CAPSULE_EXPANDED_H, CAPSULE_TRANSITION_MS, MINIMIZED_H, SNAP_DURATION_MS,
-    SNAP_FRAME_MS, TOP_MARGIN, WIN_H_DEFAULT, WIN_W,
+    SNAP_FRAME_MS, WIN_H_DEFAULT, WIN_W,
 };
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -186,8 +186,12 @@ pub(crate) fn snap_back(
     to_x: f64,
     to_y: f64,
 ) {
+    let epoch = crate::display::LAYOUT_EPOCH.load(Ordering::SeqCst);
+    let initial_scale = window.scale_factor().unwrap_or(1.0);
     let start = Instant::now();
     loop {
+        if crate::display::LAYOUT_EPOCH.load(Ordering::SeqCst) != epoch
+            || window.scale_factor().unwrap_or(1.0) != initial_scale { return; }
         let elapsed = start.elapsed().as_secs_f64() * 1000.0;
         let p = (elapsed / SNAP_DURATION_MS).min(1.0);
         let t = ease_out_cubic(p);
@@ -216,6 +220,7 @@ pub(crate) fn stage_capsule_window_height(
     anim_id: Arc<AtomicU64>,
     my_gen: u64,
 ) {
+    let layout_epoch = crate::display::LAYOUT_EPOCH.load(Ordering::SeqCst);
     let phys_w = (win_w * scale).round() as i32;
     let phys_h = (target_h * scale).round() as i32;
 
@@ -240,6 +245,18 @@ pub(crate) fn stage_capsule_window_height(
     thread::spawn(move || {
         // Keep ResizeObserver sync suppressed through transitionend delivery.
         thread::sleep(Duration::from_millis(CAPSULE_TRANSITION_MS + 32));
+        if crate::display::LAYOUT_EPOCH.load(Ordering::SeqCst) != layout_epoch
+            || (crate::display::scale(HWND(hwnd_raw as *mut _)) - scale).abs() > 0.001 {
+            if anim_id.load(Ordering::Relaxed) == my_gen {
+                let target = HWND(hwnd_raw as *mut _);
+                let dpi = crate::display::scale(target);
+                unsafe { let _ = SetWindowPos(target, None, 0, 0,
+                    (win_w * dpi).round() as i32, (target_h * dpi).round() as i32,
+                    SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOMOVE); }
+            }
+            let _ = anim_id.compare_exchange(my_gen, 0, Ordering::Relaxed, Ordering::Relaxed);
+            return;
+        }
         if anim_id.load(Ordering::Relaxed) != my_gen {
             return;
         }
@@ -270,11 +287,19 @@ pub(crate) fn animate_resize(
     to_w: f64,
     to_h: f64,
     duration_ms: f64,
-) {
+) -> bool {
+    let epoch = crate::display::LAYOUT_EPOCH.load(Ordering::SeqCst);
     let scale = window.scale_factor().unwrap_or(1.0);
     let hwnd = HWND(window.hwnd().unwrap().0);
     let start = Instant::now();
     loop {
+        if crate::display::LAYOUT_EPOCH.load(Ordering::SeqCst) != epoch
+            || (crate::display::scale(hwnd) - scale).abs() > 0.001 {
+            // Finish the intended size at the new DPI, but leave positioning to
+            // the display watcher instead of writing an old-screen coordinate.
+            let _ = window.set_size(tauri::LogicalSize::new(to_w, to_h));
+            return false;
+        }
         let elapsed = start.elapsed().as_secs_f64() * 1000.0;
         let p = (elapsed / duration_ms).min(1.0);
         let t = ease_out_cubic(p);
@@ -301,6 +326,7 @@ pub(crate) fn animate_resize(
         }
         thread::sleep(Duration::from_millis(SNAP_FRAME_MS));
     }
+    true
 }
 
 #[tauri::command]
@@ -322,13 +348,12 @@ pub fn end_drag(window: tauri::WebviewWindow, state: tauri::State<'_, IslandStat
         .inner_size()
         .map(|s| s.width as f64 / scale)
         .unwrap_or(WIN_W);
-    let target_x = (state.screen_w - cur_w) / 2.0;
-    let target_y = TOP_MARGIN;
+    let (target_x, target_y) = crate::display::home(&window, cur_w);
 
     if let Ok(pos) = window.outer_position() {
         let cx = pos.x as f64 / scale;
         let cy = pos.y as f64 / scale;
-        if cy <= -12.0 {
+        if cy <= target_y - 12.0 {
             return true;
         }
         let w = window.clone();
@@ -425,13 +450,12 @@ pub fn set_music_expanded(
     height: f64,
 ) {
     state.music_expanded.store(expanded, Ordering::Relaxed);
-    let screen_w = state.screen_w;
     let scale = window.scale_factor().unwrap_or(1.0);
 
     if expanded {
         let target_w = width;
         let target_h = height;
-        let target_x = (screen_w - target_w) / 2.0;
+        let (target_x, _) = crate::display::home(&window, target_w);
 
         if let Ok(pos) = window.outer_position() {
             let from_x = pos.x as f64 / scale;
@@ -465,14 +489,15 @@ pub fn set_music_expanded(
             let target_w = WIN_W;
             let target_h = WIN_H_DEFAULT;
 
-            let home_x = (screen_w - WIN_W) / 2.0;
+            let (home_x, home_y) = crate::display::home(&window, WIN_W);
             let w = window.clone();
             thread::spawn(move || {
-                animate_resize(
+                if animate_resize(
                     &w, from_x, from_y, from_w, from_h, target_x, target_y, target_w, target_h,
                     350.0,
-                );
-                snap_back(&w, target_x, target_y, home_x, TOP_MARGIN);
+                ) {
+                    snap_back(&w, target_x, target_y, home_x, home_y);
+                }
             });
         } else {
             let _ = window.set_size(tauri::LogicalSize::new(WIN_W, WIN_H_DEFAULT));
@@ -487,7 +512,6 @@ pub fn set_minimized(
     minimized: bool,
 ) {
     state.is_minimized.store(minimized, Ordering::Relaxed);
-    let screen_w = state.screen_w;
     let scale = window.scale_factor().unwrap_or(1.0);
 
     if minimized {
@@ -502,8 +526,7 @@ pub fn set_minimized(
                 .unwrap_or((WIN_W, WIN_H_DEFAULT));
 
             // 横条由前端在固定宽度窗口中居中，原生窗口只回到屏幕中心。
-            let target_x = (screen_w - WIN_W) / 2.0;
-            let target_y = TOP_MARGIN;
+            let (target_x, target_y) = crate::display::home(&window, WIN_W);
             let target_w = WIN_W;
             let target_h = MINIMIZED_H;
 
@@ -526,8 +549,7 @@ pub fn set_minimized(
                 .unwrap_or((WIN_W, MINIMIZED_H));
 
             // 恢复到屏幕顶部居中
-            let target_x = (screen_w - WIN_W) / 2.0;
-            let target_y = TOP_MARGIN;
+            let (target_x, target_y) = crate::display::home(&window, WIN_W);
             let target_w = WIN_W;
             let target_h = WIN_H_DEFAULT;
 

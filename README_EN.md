@@ -72,12 +72,14 @@ The installer is recommended over copying the standalone `Wisland.exe` from a bu
 
 ### Capsule and tray modes
 
+The current development branch (unreleased) upgrades the quota popup to a right-edge Runtime sidebar with a local JSONL trajectory and an embedded event Inspector. See the [data contract and test guide (Chinese)](docs/runtime-sidebar.md). Steps are display groups, not inferred model-invocation boundaries.
+
 - Right-click the capsule and select “切换至托盘态” (switch to tray mode). Only the quota ring remains in the standard Windows notification area; there is no persistent floating window. Windows may place the icon in its overflow area; drag it into the visible tray area if preferred.
 - The ring uses green for idle, orange for running, and gray for offline. The outer ring represents the weekly quota; the inner ring represents the five-hour quota.
 - The tray uses one icon slot. Hover for `5h` / `1w` percentages. When the API reports no five-hour limit, only the weekly ring and weekly information appear. An absent limit is not treated as zero remaining quota.
-- Click the tray icon for a nearby popup with one or two quota rows, progress bars, and reset times, without another ring. Press Esc or Alt+F4, or focus another window, to hide the popup completely.
-- Windows 11 build 22621 or later uses native Desktop Acrylic, rounded corners, and a shadow. The borderless panel slides up from the taskbar's upper edge (about 240ms) and retracts downward (about 170ms), clipped at that boundary. Animation updates follow Windows composition pacing. It follows the light/dark theme. Disabled transparency, high contrast, or Battery Saver uses an opaque background; disabled system animations use immediate show/hide. Earlier Windows versions retain the opaque fallback.
-- Use “显示胶囊” (show capsule) in the detail panel or tray menu to return. Settings → General offers separate controls for the current mode and the next startup's default mode.
+- Click the tray icon for a 525-logical-pixel-wide sidebar spanning the work area above the taskbar. Quota rows stay at the top; a scrollable Turn → Step → Event trajectory fills the remainder. Click an event for its in-panel Inspector. Esc first closes the Inspector, then hides the sidebar; Alt+F4 or the top-right hide button also hides it. Focusing another window leaves it visible.
+- Windows 11 build 22621 or later uses native Desktop Acrylic, rounded corners, and a shadow. The borderless sidebar slides left from the screen's right edge (about 240ms) and retracts right (about 170ms), clipped at that boundary. Animation updates follow Windows composition pacing. It follows the light/dark theme. Disabled transparency, high contrast, or Battery Saver uses an opaque background; disabled system animations use immediate show/hide. Earlier Windows versions retain the opaque fallback.
+- Use “显示胶囊” (show capsule) in the tray menu to return. The header groups Refresh quota, Settings, and Hide in that order. Settings → General offers separate controls for the current mode and the next startup's default mode.
 - Rust keeps tray status and quota polling active independently of the hidden capsule. Failed requests retain the latest successful data for up to six hours with a stale-data indicator. Manually starting an environment check returns to capsule mode.
 
 Wisland uses Codex lifecycle Hooks to synchronize task start and completion states, and an authenticated Codex CLI session to retrieve quota information. Fully restart Codex after installing Hooks so that the new configuration is loaded.
@@ -136,7 +138,7 @@ Wisland/
 ├─ docs/assets/             # Images used by the README files
 ├─ index.html               # Main capsule window entry
 ├─ settings.html            # Settings window entry
-├─ tray.html                # Details opened by clicking the standard tray icon
+├─ tray.html                # Codex Runtime sidebar opened from the tray icon
 └─ package.json             # Frontend dependencies and development commands
 ```
 
