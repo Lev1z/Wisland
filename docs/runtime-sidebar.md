@@ -5,7 +5,10 @@
 切换到托盘态后，点击标准系统托盘图标。原有详情窗口现在沿显示器右侧展开，内容宽度为 525 个逻辑像素，高度覆盖可用工作区，不遮挡任务栏。顶部保持状态与 5h / Weekly 额度；缺失的额度窗口不显示。
 
 - 轨迹使用 DSH 风格的统一时间线，事件行高 24px，不再嵌套 Turn / Step 卡片。左侧窄栏标注轮次，右侧彩条、两字类型标签和摘要始终对齐；按 JSONL 文件顺序显示，不按工具归属重排。
-- 默认选择最近修改的本地会话；下拉框可固定一个会话。会话列表显示最近 40 份日志，通过 `session_index.jsonl` 中的会话 ID 映射 Codex 标题，约每 3 秒同步重命名；无标题时回退文件标识。标题索引最多读取末尾 8 MiB，未命中的较旧标题也采用回退标识。
+- 默认选择当前有效日志最近修改的本地会话；可固定一个会话。列表最多显示最近 40 个**逻辑会话**，同一 `thread_id` 的多份 rollout 合并，不按标题去重。真正的同名分支保留独立身份。固定的会话即使落出最近 40 个也继续保留。
+- 正确区分 `rollout-时间-thread_id.jsonl` 与 `rollout-时间-thread_id_rollout_id.jsonl`：前一个 UUID 用于会话身份和标题映射，后一个 UUID 标识具体日志版本。优先读取 `session_meta.id` 确认身份。
+- 每 3 秒只读查询本地 `state_N.sqlite` 的 `threads.rollout_path` 与 `name`；使用 SQLite 只读连接读取当前 WAL，不启动或接管 Codex。标题索引 `session_index.jsonl` 为兼容回退（最多末尾 8 MiB，最新完整记录生效）。没有名称记录的条目显示“未命名会话”，不将长文件名当作标题。
+- 当前日志由 Codex 索引指定，不按旧文件的修改时间猜测。如果索引不可读，则按文件创建时间戳/日志 ID 回退，并在多版本会话上说明；索引明确指向缺失或未支持的文件时显示不可用提示，**不静默替换成旧轨迹**。
 - `Live ↓` 跟随新事件。向上滚动会暂停跟随，点击按钮恢复。
 - 点击事件打开侧栏内部 Inspector，只覆盖摘要区域。轮次列宽 34px；原时间线的轮次、彩条和两字标签留在原位，不复制另一套导航、不调暗列表。点击露出的原标签直接切换事件，也可在左列上滚动。右侧展示概述、工具参数、关联结果、可用元数据与原始记录。
 - Inspector 打开时暂停滚动跟随并临时固定会话，关闭后恢复打开前的列表滚动位置与原来的会话选择模式；点击 `Live ↓` / `跟随 ↓` 可继续跟随。详情抽屉从右侧滑入并渐显（300ms），关闭时反向收回（220ms），可中途反向操作；系统关闭动画或启用减少动态效果时直接切换。原行按事件 ID 就地更新，锁定会话或增量刷新不替换左列节点。第一次 Esc 关闭 Inspector，之后 Esc 隐藏侧栏；隐藏不退出 Wisland。
@@ -14,9 +17,11 @@
 
 ## 数据契约
 
-读取 `$CODEX_HOME/sessions/**/*.jsonl`，未设置时使用 `%USERPROFILE%\.codex\sessions`。仅识别 `rollout-*.jsonl`；不访问 `auth.json`，不修改 Codex 配置，不建立新的 Codex 控制连接，也不上传轨迹。
+读取 `$CODEX_HOME/sessions/**/*.jsonl`，未设置时使用 `%USERPROFILE%\.codex\sessions`。仅识别规范的 `rollout-*.jsonl`；历史引用可读取 `archived_sessions` 内的未压缩源日志，但归档会话不列入选择框。不访问 `auth.json`，不修改 Codex 配置或数据库，不建立新的 Codex 控制连接，也不上传轨迹。
 
 每 500ms 从已选文件的上次字节偏移继续读取；每 3 秒重新发现最近会话。等待完整换行后才解析，支持跨写入批次的 UTF-8 字符。日志缩短、更换或已读边界被重写时重建视图。同步速度受 Codex 写盘频率影响，不等同于逐 token 的运行时事件流。
+
+分页日志沿 `session_meta.history_base` 解析保留的历史链。该字段中的 `thread_id` 实际引用具体 rollout ID，读取严格止于 `end_byte_offset`，带 ordinal 的记录还受 `end_ordinal_exclusive` 限制，不混入回退后丢弃的内容。历史链最多 64 段；源缺失、压缩、循环或边界异常时说明仅加载部分历史。事件 ID 使用 `rollout_id:byte_offset`，避免不同日志相同偏移产生详情串线。同一会话的当前日志切换时自动重建轨迹，手动固定的是会话而非旧文件。
 
 - 支持 `event_msg` 的回合开始、完成、中断及消息；`response_item` 的消息、公开摘要、工具调用与结果；`compacted`；以及新格式 `item_completed` 的常见 TurnItem。
 - 轮次使用日志中的 `turn_id`，左侧编号仅是本次加载记录中的顺序，历史裁剪时不重编号。没有标识的记录显示“未关联”，不猜测所属回合。
@@ -27,7 +32,7 @@
 - 只呈现公开摘要；省略原始推理正文、加密内容和二进制字段。Inspector 中的代码与 HTML 始终作为纯文本显示。
 - 顶部状态灯和额度继续使用现有全局监控链路，不代表下拉框所选历史会话的当前状态。
 
-内存与读取有界：首次最多读取文件末尾 4 MiB，每轮最多 512 KiB；单行超过 2 MiB 跳过；列表保留最近 800 个事件；Inspector 对原始记录和内容做限长处理，每段文本最多 32K 字符。超长文本显示截断提示，原始内容页同时标注限长与字段省略。压缩归档、云端会话，以及未落盘的内部事件不在本次数据源范围内。
+内存与读取有界：首次的历史内容预算为整条有效历史链合计 4 MiB，从最新日志向前分配，优先保留最近内容；后续活动日志每轮增量最多 512 KiB。发现阶段只读取每份日志的首行元数据，上限 2 MiB；正文单行超过 2 MiB 跳过；列表保留最近 800 个事件；Inspector 对原始记录和内容做限长处理，每段文本最多 32K 字符。超长文本显示截断提示，原始内容页同时标注限长与字段省略。压缩日志、云端会话，以及未落盘的内部事件不在本次数据源范围内。
 
 ## 窗口与动画
 
@@ -52,4 +57,6 @@ node scripts/test-tray-native.cjs --display --runtime
 
 界面测试使用模拟数据检查双额度/仅周额度/离线、深浅主题、三个 DPI、时间线行对齐与顺序、模型调用标记、Inspector 导航、安全文本与滚动恢复。原生测试使用自己创建的隔离 `CODEX_HOME` 检查文件追加、半个 UTF-8 字符、结果关联、会话锁定、路径拒绝和真实窗口开关。材质单元测试使用真实隐藏 HWND 验证非客户区消息处理不会夺取前台。实际毛玻璃在动画前几帧是否闪烁、跨机器失焦外观，仍需用户机器上的连续观察，不能仅凭截图或几何测试判定。
 
-参考源码（只读、未复制其组件）：Codex 的 `protocol/src/protocol.rs`（`TokenUsageRecord` / `RawResponseCompletedEvent`）、`protocol/src/models.rs`、`protocol/src/items.rs`、`history/src/rollout_payload.rs`、`rollout/src/policy.rs`；DSH 的 `packages/client/ui-trajectory/src/client/TrajectoryTable.tsx`、`TrajectoryTable.module.css`、`trajectory-virtual-rows.ts`。Wisland 使用自己的 Rust 增量读取器及 Vanilla TypeScript 视图，不引入 DSH 运行时依赖。
+参考源码（只读、未复制其组件）：Codex 的 `protocol/src/protocol.rs`（`TokenUsageRecord` / `RawResponseCompletedEvent`）、`protocol/src/models.rs`、`protocol/src/items.rs`、`history/src/rollout_payload.rs`、`rollout/src/policy.rs`、`rollout/src/rollout_file_name.rs`、`rollout/src/rollout_reference_index.rs`、`thread-store/src/local/rollout_lineage.rs` / `revert_thread.rs`；DSH 的 `packages/client/ui-trajectory/src/client/TrajectoryTable.tsx`、`TrajectoryTable.module.css`、`trajectory-virtual-rows.ts`。Wisland 使用自己的 Rust 增量读取器及 Vanilla TypeScript 视图，不引入 DSH 运行时依赖。
+
+会话、分支与回退语义参见 [OpenAI Codex App Server 文档](https://learn.chatgpt.com/docs/app-server)；磁盘文件与历史引用布局依据上述本地源码。排查会话列表可显式指定 `WISLAND_RUNTIME_AUDIT_HOME`，运行 `cargo test --lib audit_local_catalog -- --ignored --nocapture`，只读输出会话数量、名称覆盖率及历史缺失分类，不输出对话正文。

@@ -3,7 +3,7 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use std::{
     collections::{HashMap, VecDeque},
-    fs::{self, File},
+    fs::File,
     io::{Read, Seek, SeekFrom},
     path::{Path, PathBuf},
     sync::Mutex,
@@ -17,17 +17,9 @@ const LINE_BYTES: usize = 2 * 1024 * 1024;
 const MAX_EVENTS: usize = 800;
 const DETAIL_CHARS: usize = 32 * 1024;
 
-#[derive(Clone, Serialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct Session {
-    id: String,
-    label: String,
-    thread_id: Option<String>,
-    file_name: String,
-    modified: u64,
-    #[serde(skip)]
-    path: PathBuf,
-}
+#[path = "runtime_catalog.rs"]
+mod catalog;
+use catalog::{Segment, Session};
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -68,6 +60,7 @@ pub struct Snapshot {
 
 #[derive(Default)]
 struct Projection {
+    source: String,
     events: VecDeque<RuntimeEvent>,
     turn: String,
     turn_numbers: HashMap<String, u32>,
@@ -147,6 +140,11 @@ fn bounded(value: &Value, budget: &mut usize) -> Value {
 
 impl Projection {
     fn ingest(&mut self, bytes: &[u8], offset: u64) {
+        let event_id = if self.source.is_empty() {
+            offset.to_string()
+        } else {
+            format!("{}:{offset}", self.source)
+        };
         let Ok(line) = serde_json::from_slice::<Value>(bytes) else {
             self.skipped += 1;
             return;
@@ -197,7 +195,7 @@ impl Projection {
                     return;
                 }
                 self.next_model_call += 1;
-                self.model_calls.insert(key, offset.to_string());
+                self.model_calls.insert(key, event_id.clone());
                 Some(ModelCall {
                     response_id,
                     number: self.next_model_call,
@@ -364,7 +362,7 @@ impl Projection {
                 kind.into(),
                 source.into(),
                 fingerprint,
-                offset.to_string(),
+                event_id.clone(),
             ));
             if self.messages.len() > 32 {
                 self.messages.pop_front();
@@ -402,10 +400,9 @@ impl Projection {
                 .map(|v| v.remove("raw_content"));
         }
         let raw = bounded(&raw, &mut DETAIL_CHARS.clone());
-        let detail =
-            json!({ "raw": raw, "content": short(&content, DETAIL_CHARS), "byteOffset": offset });
+        let detail = json!({ "raw": raw, "content": short(&content, DETAIL_CHARS), "byteOffset": offset, "rolloutId": self.source });
         self.events.push_back(RuntimeEvent {
-            id: offset.to_string(),
+            id: event_id,
             turn_id,
             turn_number,
             model_call,
@@ -449,6 +446,9 @@ impl Projection {
 
 struct Tail {
     path: PathBuf,
+    lineage: Vec<Segment>,
+    history_note: String,
+    initialized: bool,
     offset: u64,
     line_start: u64,
     pending: Vec<u8>,
@@ -463,6 +463,9 @@ impl Tail {
     fn new(path: PathBuf) -> Self {
         Self {
             path,
+            lineage: Vec::new(),
+            history_note: String::new(),
+            initialized: false,
             offset: 0,
             line_start: 0,
             pending: Vec::new(),
@@ -472,6 +475,74 @@ impl Tail {
             checkpoint: Vec::new(),
             projection: Projection::default(),
         }
+    }
+    fn from_session(session: &Session) -> Self {
+        let mut tail = Self::new(session.path.clone());
+        tail.lineage = session.lineage.clone();
+        tail.history_note = [
+            session.selection_note.as_str(),
+            session.history_note.as_str(),
+        ]
+        .into_iter()
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join(" · ");
+        tail
+    }
+    fn seed_history(&mut self, leaf_len: u64) -> Result<(), String> {
+        // One aggregate 4 MiB window, allocated newest first across the retained
+        // lineage. Never read abandoned records past a history_base cutoff.
+        let mut budget = HISTORY_BYTES.saturating_sub(leaf_len);
+        let mut ranges = Vec::new();
+        for segment in self.lineage.iter().rev().skip(1) {
+            let end = segment.end.as_ref().ok_or("历史源缺少读取边界")?;
+            let count = end.bytes.min(budget);
+            budget -= count;
+            self.truncated |= count < end.bytes;
+            if count > 0 {
+                ranges.push((segment.clone(), end.bytes - count, end.bytes));
+            }
+        }
+        for (segment, start, end) in ranges.into_iter().rev() {
+            let mut file = File::open(&segment.path).map_err(|e| format!("无法读取历史源：{e}"))?;
+            if file.metadata().map_err(|e| e.to_string())?.len() < end {
+                return Err("历史源已缩短，等待重新扫描".into());
+            }
+            file.seek(SeekFrom::Start(start))
+                .map_err(|e| e.to_string())?;
+            let mut bytes = Vec::new();
+            file.take(end - start)
+                .read_to_end(&mut bytes)
+                .map_err(|e| e.to_string())?;
+            self.projection.source = segment.rollout_id;
+            let mut offset = start;
+            for (index, line) in bytes.split_inclusive(|b| *b == b'\n').enumerate() {
+                if !(index == 0 && start > 0) && line.last() == Some(&b'\n') {
+                    if line.len() <= LINE_BYTES {
+                        // New paginated records also carry ordinals. Respect both
+                        // cutoffs when available; legacy lines only have byte offsets.
+                        let outside = serde_json::from_slice::<Value>(line)
+                            .ok()
+                            .and_then(|v| v["ordinal"].as_u64())
+                            .is_some_and(|n| n >= segment.end.as_ref().unwrap().ordinal);
+                        if !outside {
+                            self.projection.ingest(line, offset);
+                        }
+                    } else {
+                        self.projection.skipped += 1;
+                    }
+                }
+                offset += line.len() as u64;
+            }
+            self.projection.messages.clear();
+        }
+        self.projection.source = self
+            .lineage
+            .last()
+            .map(|s| s.rollout_id.clone())
+            .unwrap_or_default();
+        self.initialized = true;
+        Ok(())
     }
     fn poll(&mut self) -> Result<bool, String> {
         let mut file = File::open(&self.path).map_err(|e| format!("无法读取会话日志：{e}"))?;
@@ -485,9 +556,18 @@ impl Tail {
             reset = file.read_exact(&mut check).is_err() || check != self.checkpoint;
         }
         if reset {
+            let lineage = self.lineage.clone();
+            let note = self.history_note.clone();
             *self = Self::new(self.path.clone());
+            self.lineage = lineage;
+            self.history_note = note;
         }
         self.created = meta.created().ok();
+        let seeded = !self.initialized;
+        if seeded {
+            self.projection = Projection::default();
+            self.seed_history(meta.len())?;
+        }
         if self.offset == 0 && meta.len() > HISTORY_BYTES {
             self.offset = meta.len() - HISTORY_BYTES;
             self.line_start = self.offset;
@@ -495,7 +575,7 @@ impl Tail {
             self.truncated = true;
         }
         if meta.len() == self.offset {
-            return Ok(reset);
+            return Ok(reset || seeded);
         }
         file.seek(SeekFrom::Start(self.offset))
             .map_err(|e| e.to_string())?;
@@ -530,19 +610,6 @@ impl Tail {
             .map_err(|e| e.to_string())?;
         Ok(true)
     }
-}
-
-fn rollout_thread_id(path: &Path) -> Option<String> {
-    let stem = path.file_stem()?.to_str()?;
-    let id = stem.get(stem.len().checked_sub(36)?..)?;
-    let valid = id.bytes().enumerate().all(|(i, c)| {
-        if [8, 13, 18, 23].contains(&i) {
-            c == b'-'
-        } else {
-            c.is_ascii_hexdigit()
-        }
-    });
-    valid.then(|| id.to_ascii_lowercase())
 }
 
 fn resolve_session_names(root: &Path, sessions: &mut [Session]) {
@@ -600,63 +667,6 @@ fn apply_session_names(bytes: &[u8], partial_start: bool, sessions: &mut [Sessio
     }
 }
 
-fn discover(root: &Path) -> Vec<Session> {
-    // Bounded depth, no symlinks/junction traversal. Only sessions/**/rollout-*.jsonl.
-    let mut dirs = vec![(root.to_path_buf(), 0)];
-    let mut sessions = Vec::new();
-    while let Some((dir, depth)) = dirs.pop() {
-        let Ok(entries) = fs::read_dir(&dir) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let Ok(kind) = entry.file_type() else {
-                continue;
-            };
-            if kind.is_symlink() {
-                continue;
-            }
-            let path = entry.path();
-            if kind.is_dir() && depth < 3 {
-                dirs.push((path, depth + 1));
-            } else if kind.is_file()
-                && path.extension().is_some_and(|e| e == "jsonl")
-                && entry.file_name().to_string_lossy().starts_with("rollout-")
-            {
-                let Ok(meta) = entry.metadata() else {
-                    continue;
-                };
-                let modified = meta
-                    .modified()
-                    .ok()
-                    .and_then(|v| v.duration_since(SystemTime::UNIX_EPOCH).ok())
-                    .map_or(0, |v| v.as_millis() as u64);
-                let id = path
-                    .strip_prefix(root)
-                    .unwrap_or(&path)
-                    .to_string_lossy()
-                    .to_string();
-                let label = entry
-                    .file_name()
-                    .to_string_lossy()
-                    .trim_start_matches("rollout-")
-                    .trim_end_matches(".jsonl")
-                    .to_string();
-                sessions.push(Session {
-                    id,
-                    label,
-                    thread_id: rollout_thread_id(&path),
-                    file_name: entry.file_name().to_string_lossy().to_string(),
-                    path,
-                    modified,
-                });
-            }
-        }
-    }
-    sessions.sort_by(|a, b| b.modified.cmp(&a.modified).then(a.id.cmp(&b.id)));
-    sessions.truncate(40);
-    sessions
-}
-
 struct Service {
     root: PathBuf,
     selected: Option<String>,
@@ -672,27 +682,7 @@ impl Service {
             .scanned
             .is_none_or(|t| t.elapsed() >= Duration::from_secs(3))
         {
-            let mut sessions = discover(&self.root);
-            // A pinned session must remain readable after falling out of the recent 40.
-            if let Some(old) = self
-                .snapshot
-                .sessions
-                .iter()
-                .find(|s| Some(&s.id) == self.selected.as_ref())
-            {
-                if !sessions.iter().any(|s| s.id == old.id) {
-                    sessions.push(old.clone());
-                }
-            }
-            // Re-resolve even for a pinned old session; renames need no rollout write.
-            for session in &mut sessions {
-                session.label = session
-                    .file_name
-                    .trim_start_matches("rollout-")
-                    .trim_end_matches(".jsonl")
-                    .to_string();
-            }
-            resolve_session_names(&self.root, &mut sessions);
+            let sessions = catalog::discover(&self.root, self.selected.as_deref());
             changed = sessions != self.snapshot.sessions;
             self.snapshot.sessions = sessions;
             self.scanned = Some(Instant::now());
@@ -709,12 +699,34 @@ impl Service {
                 }
             });
         let id = selected.map(|s| s.id.clone());
-        if self.snapshot.session_id != id {
-            self.tail = selected.map(|s| Tail::new(s.path.clone()));
+        if self.snapshot.session_id != id
+            || selected.is_some_and(|s| {
+                if s.unavailable {
+                    self.tail.is_some()
+                } else {
+                    self.tail
+                        .as_ref()
+                        .is_none_or(|t| t.lineage != s.lineage || t.path != s.path)
+                }
+            })
+        {
+            self.tail = selected.filter(|s| !s.unavailable).map(Tail::from_session);
             self.snapshot.session_id = id;
             changed = true;
         }
-        let error = if let Some(tail) = &mut self.tail {
+        if let (Some(session), Some(tail)) = (selected, &mut self.tail) {
+            tail.history_note = [
+                session.selection_note.as_str(),
+                session.history_note.as_str(),
+            ]
+            .into_iter()
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join(" · ");
+        }
+        let error = if let Some(session) = selected.filter(|s| s.unavailable) {
+            Some(session.selection_note.clone())
+        } else if let Some(tail) = &mut self.tail {
             match tail.poll() {
                 Ok(value) => {
                     changed |= value;
@@ -742,7 +754,7 @@ impl Service {
             self.snapshot.notice = match &self.tail {
                 None => "未找到本地 rollout JSONL；开始一轮 Codex 对话后自动发现".into(),
                 Some(t) => format!(
-                    "只读时间线 · 轮次为已加载记录编号{}{}{}{}",
+                    "只读时间线 · 轮次为已加载记录编号{}{}{}{}{}",
                     if t.projection.events.iter().any(|e| e.model_call.is_some()) {
                         " · 圆点标注已记录的模型完成调用"
                     } else {
@@ -762,6 +774,11 @@ impl Service {
                         " · 已跳过无效或超大记录"
                     } else {
                         ""
+                    },
+                    if t.history_note.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" · {}", t.history_note)
                     }
                 ),
             };
@@ -880,12 +897,16 @@ pub fn setup(app: &tauri::AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     #[test]
     fn titles_map_by_thread_id_and_follow_latest_complete_rename() {
         let id = "019a6b3c-1234-5678-9abc-0123456789ab";
         let path = PathBuf::from(format!("rollout-2026-11-09T12-30-00-{id}.jsonl"));
-        assert_eq!(rollout_thread_id(&path).as_deref(), Some(id));
-        assert_eq!(rollout_thread_id(Path::new("rollout-no-id.jsonl")), None);
+        assert_eq!(
+            catalog::rollout_ids(&path).map(|v| v.0).as_deref(),
+            Some(id)
+        );
+        assert_eq!(catalog::rollout_ids(Path::new("rollout-no-id.jsonl")), None);
         let mut sessions = vec![Session {
             id: "file-key".into(),
             label: "fallback".into(),
@@ -893,6 +914,7 @@ mod tests {
             file_name: "original.jsonl".into(),
             path,
             modified: 1,
+            ..Default::default()
         }];
         let index = format!("{{\"id\":\"{id}\",\"thread_name\":\"旧名字\"}}\ninvalid\n{{\"id\":\"other\",\"thread_name\":\"不应匹配\"}}\n{{\"id\":\"{id}\",\"thread_name\":\"新名字\"}}\n{{\"id\":\"{id}\",\"thread_name\":\"未写完\"}}");
         apply_session_names(index.as_bytes(), false, &mut sessions);
