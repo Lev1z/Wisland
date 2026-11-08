@@ -31,7 +31,7 @@ export function detailTitle(detail: EventDetail): string { return overviewFor(de
 // Disconnect before replacing the DOM. Keeping expansion state by semantic
 // section ID prevents a late related result from collapsing what is being read.
 export function renderDetailContent(container: HTMLElement, detail: EventDetail, raw: boolean, reset: boolean): () => void {
-  const expanded = reset ? new Set<string>() : new Set([...container.querySelectorAll<HTMLElement>("[data-expanded=true]")].map(e => e.dataset.section!));
+  const expanded = reset ? new Map<string, boolean>() : new Map([...container.querySelectorAll<HTMLElement>("[data-expanded]")].map(e => [e.dataset.section!, e.dataset.expanded === "true"]));
   const opened = reset ? new Set<string>() : new Set([...container.querySelectorAll<HTMLDetailsElement>("details[open]")].map(e => e.dataset.section!));
   const focused = reset ? undefined : (document.activeElement as HTMLElement)?.dataset.detailFocus;
   const scroll = reset ? 0 : container.scrollTop;
@@ -66,7 +66,9 @@ export function renderDetailContent(container: HTMLElement, detail: EventDetail,
         }));
       } catch { body.append(node("pre", "", block.text)); }
     } else { body.append(node("pre", "", block.text)); }
-    outer.dataset.expanded = String(expanded.has(block.id));
+    // Raw records start fully open, including a mirror arriving on a later
+    // snapshot. Preserve an explicit collapse while the same tab is updating.
+    outer.dataset.expanded = String(expanded.get(block.id) ?? raw);
     const toggle = action("展开全部", `展开${block.title}`, () => {
       const open = outer.dataset.expanded !== "true";
       outer.dataset.expanded = String(open); toggle.textContent = open ? "收起" : "展开全部";

@@ -24,7 +24,7 @@ exports.checkInspector = async function checkInspector(page, { theme, scale, out
     await page.locator('#tab-overview').click();
   }
   const prose = '# 实现方案\n\n**先验证，再提交。**\n\n- 解析消息\n- 保留原始数据\n\n> 仅展示实际记录\n\n```ts\nconst path = "C:\\new";\n```\n\n| 项目 | 结果 |\n| --- | --- |\n| 测试 | 通过 |\n\n<script>window.qaXss=true</script>\n<img src="https://inspector.invalid/leak" onerror="window.qaXss=true">\n\n![远程图片](https://inspector.invalid/image)\n[恶意链接](javascript:window.qaXss=true)\n[文件](file:///C:/private)';
-  await show('assistant', { type: 'message', content: prose }, prose, { data: { mirror: { payload: { content: 'MIRROR_SENTINEL' } } } });
+  await show('assistant', { type: 'message', content: prose }, prose, { data: { mirror: { payload: { content: 'MIRROR_SENTINEL\n' + '另一条源记录\n'.repeat(80) } } } });
   assert.equal(await page.locator('.detail-prose h1').textContent(), '实现方案');
   assert.equal(await page.locator('.detail-prose strong').textContent(), '先验证，再提交。');
   assert.equal(await page.locator('.detail-prose ul li').count(), 2);
@@ -39,6 +39,21 @@ exports.checkInspector = async function checkInspector(page, { theme, scale, out
   assert.equal(await page.evaluate(() => window.qaCopied), prose, 'copy preserves Markdown source');
   await page.locator('#tab-raw').click();
   assert.ok((await page.locator('#inspector-content').textContent()).includes('MIRROR_SENTINEL'));
+  for (const id of ['raw', 'mirror']) {
+    const section = page.locator(`[data-section="${id}"]`);
+    assert.equal(await section.getAttribute('data-expanded'), 'true', 'raw records default to expanded');
+    assert.ok(await section.locator('.detail-preview').evaluate(e => e.clientHeight > 240 && e.scrollHeight <= e.clientHeight + 1), 'raw records are not clipped at the overview preview height');
+  }
+  await page.locator('[data-section="raw"] .detail-expand').click();
+  await page.evaluate(() => {
+    window.qaDetailOverride.detail.raw.payload.phase = 'final';
+    window.qaRuntime.revision++; window.qaEmit('runtime-snapshot', structuredClone(window.qaRuntime));
+  });
+  await page.waitForFunction(() => document.querySelector('[data-section="raw"] pre').textContent.includes('"phase": "final"'));
+  assert.equal(await page.locator('[data-section="raw"]').getAttribute('data-expanded'), 'false', 'explicit collapse survives a live update');
+  await page.locator('#tab-overview').click();
+  await page.locator('#tab-raw').click();
+  assert.equal(await page.locator('[data-section="raw"]').getAttribute('data-expanded'), 'true', 'reopening the raw tab restores expanded default');
   await page.locator('#tab-overview').click();
   const longText = '命令输出行\n'.repeat(300) + 'END_OF_RETAINED_TEXT… [已截断]';
   const tool = { type: 'function_call', name: 'exec_command', arguments: JSON.stringify({ cmd: 'npm run test\nnode scripts/check.cjs', workdir: 'D:\\Code', max_output_tokens: 1000 }) };
