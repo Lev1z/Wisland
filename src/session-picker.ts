@@ -1,6 +1,6 @@
 // In-WebView listbox: native <select> popups size themselves to the longest label
 // and can extend beyond a narrow desktop window.
-export type SessionOption = { value: string; title: string; subtitle: string; branch?: boolean };
+export type SessionOption = { value: string; title: string; tooltip: string; branch?: boolean };
 
 export class SessionPicker {
   private button = document.getElementById("runtime-session") as HTMLButtonElement;
@@ -45,10 +45,9 @@ export class SessionPicker {
         const row = document.createElement("div");
         row.className = "session-option"; row.id = `session-option-${index}`;
         row.dataset.value = option.value; row.dataset.branch = String(!!option.branch);
-        row.setAttribute("role", "option"); row.title = `${option.title}\n${option.subtitle}`;
+        row.setAttribute("role", "option"); row.title = option.tooltip;
         const title = document.createElement("span"); title.className = "session-option-title"; title.textContent = option.title;
-        const subtitle = document.createElement("span"); subtitle.className = "session-option-subtitle"; subtitle.textContent = option.subtitle;
-        row.append(title, subtitle);
+        row.append(title);
         row.addEventListener("pointerdown", event => event.preventDefault()); // Keep combobox keyboard focus.
         row.addEventListener("click", () => this.select(option.value));
         row.addEventListener("pointermove", () => { this.active = option.value; this.highlight(false); });

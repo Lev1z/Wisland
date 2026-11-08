@@ -87,20 +87,22 @@ function transitionInspector(open: boolean, complete: () => void = () => {}): vo
 
 function renderSessionOptions(snapshot: Snapshot): void {
   const current = snapshot.sessions.find(s => s.id === snapshot.sessionId);
-  const options: SessionOption[] = [{ value: "", title: "自动跟随最近活跃会话", subtitle: `当前：${current?.label ?? "暂无会话"}` }];
+  const displayName = (session: Snapshot["sessions"][number]): string => session.forkedFromId
+    ? `分支 · ${(session.threadId ?? session.id).slice(0, 8)}` : session.label;
+  const options: SessionOption[] = [{ value: "", title: "自动跟随", tooltip: `自动跟随最近活跃会话\n当前：${current?.label ?? "暂无会话"}` }];
   const visited = new Set<string>();
   const add = (session: Snapshot["sessions"][number]): void => {
     if (visited.has(session.id)) return;
     visited.add(session.id);
     const branch = !!session.forkedFromId;
-    options.push({ value: session.id, title: `${branch ? "分支 · " : ""}${session.label}`, branch,
-      subtitle: [session.threadId?.slice(0, 8) ?? session.id, branch ? `源自 ${session.parentLabel ?? session.forkedFromId?.slice(0, 8)}` : "主会话", (session.rolloutCount ?? 1) > 1 ? `${session.rolloutCount} 份日志 · 当前有效轨迹` : "", session.selectionNote].filter(Boolean).join(" · ") });
+    options.push({ value: session.id, title: displayName(session), branch,
+      tooltip: [session.label, session.threadId ?? session.id, branch ? `源自 ${session.parentLabel ?? session.forkedFromId}` : "", (session.rolloutCount ?? 1) > 1 ? `${session.rolloutCount} 份日志` : "", session.selectionNote].filter(Boolean).join("\n") });
     snapshot.sessions.filter(s => s.forkedFromId === session.id).forEach(add);
   };
   snapshot.sessions.filter(s => !s.forkedFromId || !snapshot.sessions.some(p => p.id === s.forkedFromId)).forEach(add);
   snapshot.sessions.forEach(add); // Defensive cycle handling, never omit an entry.
   sessionPicker.update(options, snapshot.automatic ? "" : snapshot.sessionId ?? "",
-    `${snapshot.automatic ? "自动 · " : current?.forkedFromId ? "分支 · " : ""}${current?.label ?? "最近活跃"}`,
+    `${snapshot.automatic ? "自动 · " : ""}${current ? displayName(current) : "最近活跃"}`,
     current ? `${current.label}\n${current.fileName ?? current.id}` : "尚未发现会话");
 }
 

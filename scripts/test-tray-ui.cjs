@@ -108,6 +108,26 @@ async function main() {
         await page.setViewportSize({ width: 525, height });
         await page.locator('#runtime-session').click();
         await page.waitForTimeout(30);
+        assert.equal(await page.locator('.session-option-subtitle').count(), 0, 'picker has no redundant second line');
+        assert.equal(await page.locator('.session-option[data-value="long-0"]').textContent(), '分支 · long-0');
+        assert.ok((await page.locator('.session-option[data-value="long-0"]').getAttribute('title')).includes('源自 优化 Wisland Runtime 侧栏'), 'full branch information remains available on hover');
+        assert.ok(await page.locator('.session-option').evaluateAll(rows => rows.every(row => row.getBoundingClientRect().height === 26)), 'all picker entries are compact single rows');
+        assert.ok(await page.evaluate(() => {
+          const parent = document.querySelector('.session-option[data-value="test-session"]').getBoundingClientRect();
+          const branch = document.querySelector('.session-option[data-value="long-0"]').getBoundingClientRect();
+          return branch.left - parent.left === 22 && branch.right === parent.right;
+        }), 'branches have a deeper inset without widening the panel');
+        await page.evaluate(theme => window.qaEmit('tray-appearance', { acrylic: true, dark: theme === 'dark', motion: true }), theme);
+        assert.equal(await page.locator('#runtime-sessions').evaluate(e => getComputedStyle(e).backgroundColor), theme === 'dark' ? 'rgb(53, 53, 53)' : 'rgb(243, 243, 243)', 'Acrylic menu uses the matching neutral palette');
+        if (height === 850 && scale === 1.25 && scenario.name === 'dual') {
+          // Headless Chromium has no DWM surface; simulate its neutral backdrop
+          // only for this layout/color preview, then restore the real CSS path.
+          await page.locator('body').evaluate((e, color) => e.style.backgroundColor = color, theme === 'dark' ? '#353535' : '#f3f3f3');
+          await page.screenshot({ path: path.join(output, `session-picker-compact-${theme}.png`) });
+          await page.locator('body').evaluate(e => e.style.backgroundColor = '');
+        }
+        await page.evaluate(theme => window.qaEmit('tray-appearance', { acrylic: false, dark: theme === 'dark', motion: true }), theme);
+        assert.ok(await page.evaluate(() => getComputedStyle(document.getElementById('runtime-sessions')).backgroundColor === getComputedStyle(document.getElementById('details')).backgroundColor), 'opaque fallback keeps menu and sidebar colors identical');
         if (height === 360) {
           await page.locator('#quota-rows').evaluate(e => e.style.display = 'none');
           await page.waitForTimeout(30);
@@ -131,6 +151,10 @@ async function main() {
       await page.locator('#runtime-session').click();
       await page.locator('.session-option[data-value="long-0"]').click();
       await page.waitForFunction(() => window.qaRuntime.sessionId === 'long-0');
+      assert.equal(await page.locator('#runtime-session-label').textContent(), '分支 · long-0', 'closed picker also uses the compact branch label');
+      await page.locator('#runtime-session').click();
+      await page.locator('.session-option[data-value="long-3"]').click();
+      await page.waitForFunction(() => window.qaRuntime.sessionId === 'long-3');
       assert.ok(await page.locator('#runtime-session-label').evaluate(e => e.scrollWidth > e.clientWidth && getComputedStyle(e).textOverflow === 'ellipsis'), 'selected long title is ellipsized too');
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth === innerWidth), 'long selected title cannot widen the sidebar');
       await page.locator('#runtime-session').click();
