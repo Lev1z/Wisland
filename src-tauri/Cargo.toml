@@ -1,6 +1,6 @@
 [package]
 name = "wisland"
-version = "0.1.4"
+version = "0.1.5"
 description = "A lightweight Windows island for Codex, Obsidian, and focused desktop workflows"
 authors = ["Wisland contributors"]
 license = "MIT"
@@ -36,9 +36,13 @@ lyrix = "26.2.1"
 windows = { version = "0.61", features = [
     "Win32_UI_WindowsAndMessaging",
     "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Accessibility",
+    "Win32_UI_Controls",
     "Win32_Foundation",
     "Win32_Graphics_Dwm",
+    "Win32_Graphics_Gdi",
     "Win32_System_Threading",
+    "Win32_System_Power",
     "Win32_System_Diagnostics_ToolHelp",
 
     "Media_Control",

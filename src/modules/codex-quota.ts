@@ -102,6 +102,8 @@ function render(quota: CodexQuota, stale = false): void {
 }
 
 async function refresh(): Promise<void> {
+  // Tray mode owns its polling in Rust; a hidden capsule must not launch another CLI.
+  if (document.hidden) return;
   try {
     const quota = await invoke<CodexQuota>("get_codex_quota");
     if (quota.available && quota.remainingPercent !== null) {
@@ -129,6 +131,9 @@ async function refresh(): Promise<void> {
 }
 
 export function initCodexQuota(): void {
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden && !document.getElementById("island-capsule")?.classList.contains("environment-check")) void refresh();
+  });
   const cached = cachedQuota();
   if (cached) render(cached, true);
   void invoke<boolean>("get_environment_check_active")

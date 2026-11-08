@@ -18,7 +18,7 @@ const RETRY_DELAY: Duration = Duration::from_millis(650);
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CodexQuotaWindow {
-    remaining_percent: f64,
+    pub(crate) remaining_percent: f64,
     used_percent: f64,
     window_duration_mins: Option<u64>,
     resets_at: Option<u64>,
@@ -27,13 +27,13 @@ pub struct CodexQuotaWindow {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CodexQuota {
-    available: bool,
+    pub(crate) available: bool,
     remaining_percent: Option<f64>,
     used_percent: Option<f64>,
     window_duration_mins: Option<u64>,
     resets_at: Option<u64>,
-    five_hour: Option<CodexQuotaWindow>,
-    weekly: Option<CodexQuotaWindow>,
+    pub(crate) five_hour: Option<CodexQuotaWindow>,
+    pub(crate) weekly: Option<CodexQuotaWindow>,
     message: Option<String>,
 }
 
@@ -50,7 +50,7 @@ pub struct CodexCliStatus {
 }
 
 impl CodexQuota {
-    fn unavailable(message: impl Into<String>) -> Self {
+    pub(crate) fn unavailable(message: impl Into<String>) -> Self {
         Self {
             available: false,
             remaining_percent: None,
@@ -370,26 +370,9 @@ fn quota_from_response(response: &Value) -> Result<CodexQuota, String> {
             .find(|window| window.window_duration_mins == Some(duration))
             .cloned()
     };
-    let five_hour = exact_window(5 * 60).or_else(|| {
-        (windows.len() >= 2)
-            .then(|| {
-                windows
-                    .iter()
-                    .min_by_key(|window| window.window_duration_mins)
-                    .cloned()
-            })
-            .flatten()
-    });
-    let weekly = exact_window(7 * 24 * 60).or_else(|| {
-        (windows.len() >= 2)
-            .then(|| {
-                windows
-                    .iter()
-                    .max_by_key(|window| window.window_duration_mins)
-                    .cloned()
-            })
-            .flatten()
-    });
+    // Missing windows are absent limits, not a reason to reuse another window.
+    let five_hour = exact_window(5 * 60);
+    let weekly = exact_window(7 * 24 * 60);
 
     Ok(CodexQuota {
         available: true,
@@ -541,6 +524,40 @@ mod tests {
         assert_eq!(quota.window_duration_mins, Some(10080));
         assert_eq!(quota.five_hour.unwrap().remaining_percent, 75.0);
         assert_eq!(quota.weekly.unwrap().remaining_percent, 40.0);
+    }
+
+    #[test]
+    fn weekly_only_account_has_no_five_hour_limit() {
+        let response = serde_json::json!({"result": {"rateLimits": {
+            "primary": {"usedPercent": 18, "windowDurationMins": 10080},
+            "secondary": null
+        }}});
+        let quota = quota_from_response(&response).unwrap();
+        assert!(quota.available);
+        assert!(quota.five_hour.is_none());
+        assert_eq!(quota.weekly.unwrap().remaining_percent, 82.0);
+    }
+
+    #[test]
+    fn durations_not_primary_secondary_order_identify_windows() {
+        let response = serde_json::json!({"result": {"rateLimits": {
+            "primary": {"usedPercent": 100, "windowDurationMins": 10080},
+            "secondary": {"usedPercent": 0, "windowDurationMins": 300}
+        }}});
+        let quota = quota_from_response(&response).unwrap();
+        assert_eq!(quota.five_hour.unwrap().remaining_percent, 100.0);
+        assert_eq!(quota.weekly.unwrap().remaining_percent, 0.0);
+    }
+
+    #[test]
+    fn unrelated_duration_does_not_become_a_five_hour_limit() {
+        let response = serde_json::json!({"result": {"rateLimits": {
+            "primary": {"usedPercent": 18, "windowDurationMins": 10080},
+            "secondary": {"usedPercent": 40, "windowDurationMins": 43200}
+        }}});
+        let quota = quota_from_response(&response).unwrap();
+        assert!(quota.five_hour.is_none());
+        assert_eq!(quota.weekly.unwrap().remaining_percent, 82.0);
     }
 
     #[test]

@@ -560,6 +560,7 @@ pub fn show_context_menu(app: tauri::AppHandle, window: tauri::WebviewWindow) {
         // 添加菜单项
         let _ = AppendMenuW(h_menu, MF_STRING, 1, windows::core::w!("收起"));
         let _ = AppendMenuW(h_menu, MF_STRING, 2, windows::core::w!("设置"));
+        let _ = AppendMenuW(h_menu, MF_STRING, 3, windows::core::w!("切换至托盘态"));
 
         // 显示菜单并跟踪选择（阻塞直到用户选择或取消）
         let cmd = TrackPopupMenu(
@@ -584,6 +585,11 @@ pub fn show_context_menu(app: tauri::AppHandle, window: tauri::WebviewWindow) {
         }
         2 => {
             crate::settings::open_settings(app);
+        }
+        3 => {
+            if let Err(error) = crate::tray_mode::switch_mode(&app, crate::tray_mode::DisplayMode::Tray) {
+                crate::logger::error("Tray", &error);
+            }
         }
         _ => {}
     }

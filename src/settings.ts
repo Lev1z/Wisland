@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { getVersion } from "@tauri-apps/api/app";
 import { PhysicalPosition } from "@tauri-apps/api/dpi";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -7,6 +8,7 @@ import { initLyricOffset } from "./settings-lyric-offset";
 type CustomAsset = { id: string; name: string; data_url: string };
 
 type CoreSettings = {
+  startup_mode?: "capsule" | "tray";
   indicator_color?: string;
   capsule_opacity?: number;
   capsule_scale?: number;
@@ -62,6 +64,31 @@ const description = element<HTMLElement>("page-description");
 const status = element<HTMLElement>("save-status");
 const contentBody = document.querySelector<HTMLElement>(".content-body")!;
 const autoStart = element<HTMLInputElement>("auto-start");
+const startupMode = element<HTMLSelectElement>("startup-mode");
+const switchDisplayMode = element<HTMLButtonElement>("switch-display-mode");
+let currentDisplayMode: "capsule" | "tray" = "capsule";
+
+function renderDisplayMode(mode: "capsule" | "tray"): void {
+  currentDisplayMode = mode;
+  element("current-display-mode").textContent = mode === "tray" ? "托盘态 · Windows 系统托盘图标" : "胶囊态 · 桌面胶囊";
+  switchDisplayMode.textContent = mode === "tray" ? "显示胶囊" : "切换至托盘";
+  switchDisplayMode.disabled = false;
+}
+
+switchDisplayMode.addEventListener("click", async () => {
+  switchDisplayMode.disabled = true;
+  try {
+    const mode = currentDisplayMode === "tray" ? "capsule" : "tray";
+    await invoke("set_display_mode", { mode });
+    renderDisplayMode(mode);
+  } catch (error) {
+    showStatus(`切换失败：${String(error)}`, true, 4000);
+  } finally {
+    switchDisplayMode.disabled = false;
+  }
+});
+void listen<"capsule" | "tray">("display-mode-changed", ({ payload }) => renderDisplayMode(payload));
+void invoke<"capsule" | "tray">("get_display_mode").then(renderDisplayMode).catch(console.error);
 const indicatorColor = element<HTMLInputElement>("indicator-color");
 const capsuleOpacity = element<HTMLInputElement>("capsule-opacity");
 const capsuleOpacityValue = element<HTMLOutputElement>("capsule-opacity-value");
@@ -457,6 +484,7 @@ async function persistSettings(): Promise<void> {
       borderAssets,
     });
     await invoke("set_auto_start", { enabled: autoStart.checked });
+    await invoke("set_startup_mode", { mode: startupMode.value });
     await invoke("set_blacklist_enabled", { enabled: blacklistEnabled.checked });
     await invoke("save_blacklist", { processes: lines(blacklist.value) });
     await invoke("set_smtc_whitelist_enabled", { enabled: smtcWhitelistEnabled.checked });
@@ -493,6 +521,7 @@ async function loadSettings(): Promise<void> {
       invoke<string>("get_log_level"),
     ]);
     autoStart.checked = startsWithWindows;
+    startupMode.value = core.startup_mode ?? "capsule";
     indicatorColor.value = core.indicator_color || "#ffffff";
     capsuleOpacity.value = String(Math.round((core.capsule_opacity ?? 1) * 100));
     capsuleScale.value = String(nearestScale(core.capsule_scale ?? 1));
@@ -683,3 +712,6 @@ if (initialPage) activatePageById(initialPage);
 playMenuIntro();
 initLyricOffset();
 void loadSettings();
+void getVersion().then(version => {
+  document.querySelectorAll<HTMLElement>("[data-app-version]").forEach(node => { node.textContent = version; });
+}).catch(error => console.error("读取应用版本失败", error));

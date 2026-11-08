@@ -95,6 +95,9 @@ pub fn start_environment_check(
     app: tauri::AppHandle,
     state: tauri::State<'_, IslandState>,
 ) -> Result<(), String> {
+    if crate::tray_mode::active(&app) {
+        crate::tray_mode::switch_mode(&app, crate::tray_mode::DisplayMode::Capsule)?;
+    }
     state
         .environment_check_active
         .store(true, Ordering::Relaxed);

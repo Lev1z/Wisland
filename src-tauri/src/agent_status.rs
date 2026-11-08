@@ -27,7 +27,7 @@ const STALE_AFTER_MS: u64 = 24 * 60 * 60 * 1000;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CodexStatus {
-    phase: String,
+    pub(crate) phase: String,
     updated_at: u64,
     status_path: String,
 }

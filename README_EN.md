@@ -22,6 +22,7 @@ Wisland stays at the top of your screen and presents Codex status and quota, med
 ## Highlights
 
 - **Codex status and quota** — the outer concentric ring shows the weekly quota and the inner ring shows the five-hour quota; the status indicator distinguishes idle, running, and offline states.
+- **Codex tray mode** — hide the capsule and keep only a status-colored quota ring in the standard Windows notification area. Hover for percentages or click for a Windows-style detail panel. Weekly-only accounts are supported.
 - **Music, lyrics, and controls** — read track metadata, artwork, progress, and playback state from Windows SMTC, with playback controls, volume, album-colored waveforms, and per-player lyric timing.
 - **Obsidian quick notes** — append notes, tasks, and journal entries to a selected Vault and manage today's entries from the capsule.
 - **Temporary file tray** — keep references to dropped files and drag them out or open them later without copying or modifying the originals.
@@ -43,6 +44,14 @@ The installer is recommended over copying the standalone `Wisland.exe` from a bu
 - Optional: a media player that exposes Windows SMTC sessions
 - Optional: Obsidian for quick notes
 
+### v0.1.5 highlights
+
+- Adds standard system-tray mode, capsule context-menu switching, and a separate startup-mode preference.
+- Colors the quota icon by task status and supports both dual-limit and weekly-only accounts.
+- Adds a native Acrylic detail panel that reveals and retracts at the taskbar's upper edge; fixes animation borders, background flashes, and taskbar overlap.
+- Updates status and quota independently in tray mode. About and the settings sidebar now read the application version at runtime.
+- See the [tray animation implementation notes (Chinese)](docs/tray-animation-notes.md) for the investigation and regression checklist.
+
 ### v0.1.4 highlights
 
 - Replaces the single Codex quota ring with two white concentric rings: weekly quota outside and five-hour quota inside.
@@ -60,6 +69,16 @@ The installer is recommended over copying the standalone `Wisland.exe` from a bu
 7. Select an Obsidian Vault and daily-notes directory in Wisland settings to enable quick notes.
 
 ## Codex integration
+
+### Capsule and tray modes
+
+- Right-click the capsule and select “切换至托盘态” (switch to tray mode). Only the quota ring remains in the standard Windows notification area; there is no persistent floating window. Windows may place the icon in its overflow area; drag it into the visible tray area if preferred.
+- The ring uses green for idle, orange for running, and gray for offline. The outer ring represents the weekly quota; the inner ring represents the five-hour quota.
+- The tray uses one icon slot. Hover for `5h` / `1w` percentages. When the API reports no five-hour limit, only the weekly ring and weekly information appear. An absent limit is not treated as zero remaining quota.
+- Click the tray icon for a nearby popup with one or two quota rows, progress bars, and reset times, without another ring. Press Esc or Alt+F4, or focus another window, to hide the popup completely.
+- Windows 11 build 22621 or later uses native Desktop Acrylic, rounded corners, and a shadow. The borderless panel slides up from the taskbar's upper edge (about 240ms) and retracts downward (about 170ms), clipped at that boundary. Animation updates follow Windows composition pacing. It follows the light/dark theme. Disabled transparency, high contrast, or Battery Saver uses an opaque background; disabled system animations use immediate show/hide. Earlier Windows versions retain the opaque fallback.
+- Use “显示胶囊” (show capsule) in the detail panel or tray menu to return. Settings → General offers separate controls for the current mode and the next startup's default mode.
+- Rust keeps tray status and quota polling active independently of the hidden capsule. Failed requests retain the latest successful data for up to six hours with a stale-data indicator. Manually starting an environment check returns to capsule mode.
 
 Wisland uses Codex lifecycle Hooks to synchronize task start and completion states, and an authenticated Codex CLI session to retrieve quota information. Fully restart Codex after installing Hooks so that the new configuration is loaded.
 
@@ -117,6 +136,7 @@ Wisland/
 ├─ docs/assets/             # Images used by the README files
 ├─ index.html               # Main capsule window entry
 ├─ settings.html            # Settings window entry
+├─ tray.html                # Details opened by clicking the standard tray icon
 └─ package.json             # Frontend dependencies and development commands
 ```
 

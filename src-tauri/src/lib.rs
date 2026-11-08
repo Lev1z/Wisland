@@ -8,6 +8,8 @@ mod media;
 mod obsidian;
 mod privacy;
 pub mod settings;
+mod tray_mode;
+mod tray_effects;
 mod window;
 
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
@@ -17,8 +19,6 @@ use std::time::{Duration, Instant};
 use tauri::{Emitter, Manager};
 
 use tauri::image::Image;
-use tauri::menu::{MenuBuilder, MenuItemBuilder};
-use tauri::tray::TrayIconBuilder;
 use windows::Win32::Foundation::HWND;
 
 pub(crate) const WIN_W: f64 = 560.0; // 容纳 1.5× 展开胶囊，外围透明区域自动穿透
@@ -61,6 +61,10 @@ pub fn run() {
             window::set_music_expanded,
             settings::open_settings, settings::open_settings_page,
             settings::get_settings, settings::set_core_preferences,
+            tray_mode::get_display_mode, tray_mode::set_display_mode,
+            tray_mode::set_startup_mode, tray_mode::get_tray_snapshot,
+            tray_mode::set_tray_expanded, tray_mode::refresh_tray_quota,
+            tray_mode::get_tray_appearance,
             settings::open_github_profile,
             settings::set_appearance_preferences,
             settings::get_lyric_offset_players, settings::set_lyric_offset_enabled,
@@ -120,6 +124,8 @@ pub fn run() {
 
             // 从文件加载设置
             let settings = settings::load_settings_from_file();
+            let startup_mode = Arc::new(Mutex::new(settings.startup_mode));
+            let tray_mode = Arc::new(AtomicBool::new(settings.startup_mode == tray_mode::DisplayMode::Tray));
             let environment_check_active = Arc::new(AtomicBool::new(
                 settings.environment_check_version
                     < environment_check::CURRENT_ENVIRONMENT_CHECK_VERSION,
@@ -175,6 +181,8 @@ pub fn run() {
             media::start_audio_peak_monitor(window.clone(), is_music.clone());
 
             app.manage(IslandState {
+                tray_mode: tray_mode.clone(),
+                startup_mode: startup_mode.clone(),
                 is_notifying: is_notifying.clone(),
                 is_expanded: is_expanded.clone(),
                 is_dragging: is_dragging.clone(),
@@ -218,24 +226,7 @@ pub fn run() {
             });
 
             // --- 系统托盘 ---
-            let app_handle = app.handle().clone();
-            let quit_item = MenuItemBuilder::with_id("quit", "退出").build(app)?;
-            let settings_item = MenuItemBuilder::with_id("settings", "设置").build(app)?;
-            let menu = MenuBuilder::new(app).item(&settings_item).item(&quit_item).build()?;
-            let tray_image = Image::from_bytes(include_bytes!("../icons/32x32.png"))?;
-            let _tray = TrayIconBuilder::new()
-                .icon(tray_image)
-                .menu(&menu).tooltip("Wisland")
-                .on_menu_event(move |app, event| {
-                    match event.id().as_ref() {
-                        "quit" => app_handle.exit(0),
-                        "settings" => {
-                            settings::open_settings(app.clone());
-                        }
-                        _ => {}
-                    }
-                })
-                .build(app)?;
+            tray_mode::setup(app.handle())?;
 
             // --- 鼠标监控线程 ---
             let win_m = window.clone();
@@ -255,6 +246,7 @@ pub fn run() {
             let is_music_m = is_music.clone();
             let environment_check_m = environment_check_active.clone();
             let environment_check_height_m = environment_check_expanded_height.clone();
+            let tray_mode_m = tray_mode.clone();
 
             thread::spawn(move || {
                 let hwnd = HWND(hwnd_raw as *mut _);
@@ -262,6 +254,12 @@ pub fn run() {
                 let mut left_capsule_at: Option<Instant> = None;
 
                 loop {
+                    if tray_mode_m.load(Ordering::Relaxed) {
+                        was_on_capsule = false;
+                        left_capsule_at = None;
+                        thread::sleep(Duration::from_millis(100));
+                        continue;
+                    }
                     if let Some((mx, my)) = window::get_cursor_pos() {
                         // 根据当前状态确定胶囊宽度
                         let expanded = exp_m.load(Ordering::Relaxed);
@@ -427,11 +425,16 @@ pub fn run() {
                 let bl_enabled = blacklist_enabled.clone();
                 let fs_cache = blacklist_fs_cache.clone();
                 let hwnd_bl = hwnd.0 as usize;
+                let tray_mode_bl = tray_mode.clone();
                 thread::Builder::new().name("bl-monitor".into()).spawn(move || {
                     let hwnd = HWND(hwnd_bl as *mut _);
                     let mut hidden = false;
                     loop {
                         thread::sleep(Duration::from_millis(200));
+                        if tray_mode_bl.load(Ordering::Relaxed) {
+                            hidden = false;
+                            continue;
+                        }
                         if !bl_enabled.load(Ordering::Relaxed) {
                             if hidden {
                                 unsafe { let _ = windows::Win32::UI::WindowsAndMessaging::ShowWindow(hwnd, windows::Win32::UI::WindowsAndMessaging::SW_SHOWNOACTIVATE); }
@@ -954,6 +957,8 @@ fn trigger_notification(
 }
 
 pub struct IslandState {
+    pub tray_mode: Arc<AtomicBool>,
+    pub startup_mode: Arc<Mutex<tray_mode::DisplayMode>>,
     pub is_notifying: Arc<AtomicBool>,
     pub is_expanded: Arc<AtomicBool>,
     pub is_dragging: Arc<AtomicBool>,

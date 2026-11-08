@@ -96,6 +96,8 @@ fn source_exists(source: &str, assets: &[CustomAsset]) -> bool {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct SettingsData {
     #[serde(default)]
+    pub startup_mode: crate::tray_mode::DisplayMode,
+    #[serde(default)]
     pub environment_check_version: u32,
     #[serde(default = "default_lyric_mode")]
     pub lyric_mode: String,
@@ -319,6 +321,7 @@ fn default_cc_routes() -> Vec<CcRoute> {
 impl Default for SettingsData {
     fn default() -> Self {
         Self {
+            startup_mode: crate::tray_mode::DisplayMode::Capsule,
             environment_check_version: 0,
             lyric_mode: default_lyric_mode(),
             lyric_offset_enabled: default_lyric_offset_enabled(),
@@ -436,6 +439,7 @@ pub(crate) fn save_settings_to_file(data: &SettingsData) -> Result<(), String> {
 
 pub(crate) fn build_settings_data(state: &IslandState) -> SettingsData {
     SettingsData {
+        startup_mode: *state.startup_mode.lock().unwrap(),
         environment_check_version: state.environment_check_version.load(Ordering::Relaxed),
         lyric_mode: state.lyric_mode.lock().unwrap().clone(),
         lyric_offset_enabled: state.lyric_offset_enabled.load(Ordering::Relaxed),
@@ -538,6 +542,7 @@ pub fn open_github_profile() -> Result<(), String> {
 #[tauri::command]
 pub fn get_settings(state: tauri::State<'_, IslandState>) -> serde_json::Value {
     serde_json::json!({
+        "startup_mode": *state.startup_mode.lock().unwrap(),
         "lyric_mode": state.lyric_mode.lock().unwrap().clone(),
         "environment_check_version": state.environment_check_version.load(Ordering::Relaxed),
         "environment_check_completed": state.environment_check_version.load(Ordering::Relaxed)
