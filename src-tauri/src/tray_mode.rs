@@ -747,7 +747,14 @@ pub fn setup(app: &tauri::AppHandle) -> tauri::Result<()> {
         .build();
         match panel {
             Ok(panel) => {
-                sync_appearance(&handle, &panel);
+                let material_panel = panel.clone();
+                let material_handle = handle.clone();
+                let _ = handle.run_on_main_thread(move || {
+                    if let Err(error) = tray_effects::keep_material_active(&material_panel) {
+                        report_error(&material_handle, error);
+                    }
+                    sync_appearance(&material_handle, &material_panel);
+                });
                 let handle_focus = handle.clone();
                 panel.on_window_event(move |event| {
                     if let tauri::WindowEvent::CloseRequested { api, .. } = event {

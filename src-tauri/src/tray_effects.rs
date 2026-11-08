@@ -4,7 +4,7 @@ use std::mem::{size_of, size_of_val};
 use windows::core::BOOL;
 use windows::Win32::Graphics::Dwm::DwmFlush;
 use windows::Win32::{
-    Foundation::{HWND, RECT},
+    Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM},
     Graphics::Dwm::{
         DwmEnableBlurBehindWindow, DwmExtendFrameIntoClientArea, DwmSetWindowAttribute,
         DWMSBT_NONE, DWMSBT_TRANSIENTWINDOW, DWMWA_SYSTEMBACKDROP_TYPE,
@@ -15,14 +15,49 @@ use windows::Win32::{
     UI::{
         Accessibility::{HCF_HIGHCONTRASTON, HIGHCONTRASTW},
         Controls::MARGINS,
+        Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass},
         WindowsAndMessaging::{
-            FindWindowExW, GetForegroundWindow, GetWindowRect, SetWindowPos, SystemParametersInfoW,
-            SPI_GETCLIENTAREAANIMATION, SPI_GETHIGHCONTRAST, SWP_NOACTIVATE, SWP_NOZORDER,
-            SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
+            DefWindowProcW, FindWindowExW, GetForegroundWindow, GetWindowRect, SetWindowPos,
+            SystemParametersInfoW, SPI_GETCLIENTAREAANIMATION, SPI_GETHIGHCONTRAST, SWP_NOACTIVATE,
+            SWP_NOZORDER, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, WM_NCACTIVATE, WM_NCDESTROY,
         },
     },
 };
 use winreg::{enums::HKEY_CURRENT_USER, RegKey};
+
+const MATERIAL_SUBCLASS: usize = 0x5749534c;
+
+// DWM's material follows non-client activation, separately from keyboard focus.
+// Keep only that visual state active. WM_ACTIVATE/WM_KILLFOCUS still reach Tao,
+// so clicking another app really gives it focus and does not re-activate us.
+unsafe extern "system" fn material_proc(
+    hwnd: HWND,
+    message: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+    id: usize,
+    _: usize,
+) -> LRESULT {
+    if message == WM_NCACTIVATE {
+        return DefWindowProcW(hwnd, message, WPARAM(1), LPARAM(-1));
+    }
+    if message == WM_NCDESTROY {
+        let _ = RemoveWindowSubclass(hwnd, Some(material_proc), id);
+    }
+    DefSubclassProc(hwnd, message, wparam, lparam)
+}
+
+/// Install on the owning UI thread while the persistent sidebar is still hidden.
+pub fn keep_material_active(panel: &tauri::WebviewWindow) -> Result<(), String> {
+    let hwnd = HWND(panel.hwnd().map_err(|e| e.to_string())?.0);
+    unsafe {
+        if !SetWindowSubclass(hwnd, Some(material_proc), MATERIAL_SUBCLASS, 0).as_bool() {
+            return Err("无法固定侧栏背景材质".into());
+        }
+        DefWindowProcW(hwnd, WM_NCACTIVATE, WPARAM(1), LPARAM(-1));
+    }
+    Ok(())
+}
 
 pub fn cloak(panel: &tauri::WebviewWindow, hidden: bool) -> Result<(), String> {
     let hwnd = panel.hwnd().map_err(|e| e.to_string())?;
@@ -305,6 +340,47 @@ pub fn apply(panel: &tauri::WebviewWindow, previous: Option<Appearance>) -> Appe
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn inactive_material_messages_do_not_take_keyboard_focus() {
+        use windows::Win32::UI::WindowsAndMessaging::{
+            CreateWindowExW, DestroyWindow, SendMessageW, WINDOW_EX_STYLE, WS_POPUP,
+        };
+        unsafe {
+            // A real, hidden native window on this test's owning thread.
+            let hwnd = CreateWindowExW(
+                WINDOW_EX_STYLE::default(),
+                windows::core::w!("STATIC"),
+                windows::core::w!("Wisland material test"),
+                WS_POPUP,
+                0,
+                0,
+                30,
+                30,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+            assert!(SetWindowSubclass(hwnd, Some(material_proc), MATERIAL_SUBCLASS, 0).as_bool());
+            let foreground = GetForegroundWindow();
+            for active in [false, true, false] {
+                let result = SendMessageW(
+                    hwnd,
+                    WM_NCACTIVATE,
+                    Some(WPARAM(active as usize)),
+                    Some(LPARAM(0)),
+                );
+                assert_ne!(result.0, 0, "material state must accept activation changes");
+                assert_eq!(
+                    GetForegroundWindow(),
+                    foreground,
+                    "visual activation must not steal focus"
+                );
+            }
+            DestroyWindow(hwnd).unwrap(); // WM_NCDESTROY removes our subclass.
+        }
+    }
     #[test]
     fn clipping_never_crosses_screen_right_edge() {
         for boundary in [-100, 1040, 2080] {
