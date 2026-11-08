@@ -96,7 +96,8 @@ async function main() {
       }), 'header icons share geometry and appear in the requested order');
       await page.waitForFunction(() => document.querySelectorAll('.event-row').length === 72);
       assert.equal(await page.locator('.turn-group, .step-group, .group-toggle').count(), 0, 'timeline must not contain nested groups');
-      assert.deepEqual(await page.locator('.timeline-turn').allTextContents(), ['第 1 轮', '第 2 轮']);
+      assert.deepEqual(await page.locator('.timeline-turn').allTextContents(), ['第1轮', '第2轮']);
+      assert.equal(await page.locator('.timeline-gutter').first().evaluate(e => e.getBoundingClientRect().width), 34, 'turn gutter is narrower');
       assert.equal(await page.locator('.request-marker').count(), 6, 'explicit model calls have timeline markers');
       assert.ok(await page.locator('.event-summary').evaluateAll(items => items.every(item => item.getBoundingClientRect().x === items[0].getBoundingClientRect().x)), 'all event summaries align on one axis');
       assert.deepEqual(await page.locator('.event-row').evaluateAll(items => items.map(item => item.dataset.event)), Array.from({ length: 72 }, (_, i) => String(i)), 'timeline keeps source order');
@@ -104,15 +105,36 @@ async function main() {
       await page.locator('#trajectory-list').evaluate(e => e.scrollTop = 170);
       await page.waitForTimeout(30);
       const beforeInspector = await page.locator('#trajectory-list').evaluate(e => e.scrollTop);
+      await page.evaluate(() => {
+        window.qaOriginalRow = document.querySelector('.event-row[data-event="10"]');
+        window.qaOriginalKind = window.qaOriginalRow.querySelector('.event-kind');
+        const rect = window.qaOriginalKind.getBoundingClientRect();
+        window.qaPrefixGeometry = { x: rect.x, y: rect.y };
+      });
       await page.locator('.event-row').filter({ hasText: 'exec_command' }).nth(2).dispatchEvent('click');
       await page.locator('#inspector:not([hidden])').waitFor();
       await page.waitForFunction(() => document.getElementById('inspector-content').textContent.includes('npm run test'));
       assert.equal(await page.locator('#inspector-content img').count(), 0, 'log payload must render as text, never HTML');
-      assert.equal(await page.locator('.rail-event').count(), 72);
+      await page.waitForFunction(() => document.getElementById('inspector').dataset.phase === 'open');
+      assert.equal(await page.locator('#event-rail, .rail-event').count(), 0, 'Inspector must not build a replacement navigation rail');
+      assert.ok(await page.evaluate(() => {
+        const kind = document.querySelector('.event-row[data-event="10"] .event-kind');
+        const rect = kind.getBoundingClientRect();
+        const pane = document.getElementById('inspector').getBoundingClientRect();
+        const summary = document.querySelector('.event-summary').getBoundingClientRect();
+        return kind === window.qaOriginalKind && kind.parentElement === window.qaOriginalRow
+          && rect.x === window.qaPrefixGeometry.x && rect.y === window.qaPrefixGeometry.y
+          && Math.abs(pane.left - summary.left) < 1
+          && getComputedStyle(document.getElementById('trajectory-list')).opacity === '1'
+          && !document.getElementById('trajectory-list').inert;
+      }), 'the same timeline column remains stationary, bright and clickable; Inspector covers only summaries');
       await page.locator('#tab-raw').click();
       assert.ok((await page.locator('#inspector-content').textContent()).includes('function_call'));
-      await page.locator('.rail-event').nth(6).click();
-      await page.waitForFunction(() => document.querySelector('.rail-event[data-event="6"]').getAttribute('aria-current') === 'true');
+      await page.locator('#trajectory-list').evaluate(e => e.scrollTop += 48);
+      await page.evaluate(() => { window.qaRuntime.revision++; window.qaEmit('runtime-snapshot', structuredClone(window.qaRuntime)); });
+      assert.equal(await page.locator('#trajectory-list').evaluate(e => e.scrollTop), beforeInspector + 48, 'snapshot updates preserve left-column navigation scroll');
+      await page.locator('.event-row[data-event="10"] .event-kind').click();
+      await page.waitForFunction(() => document.querySelector('.event-row[data-event="10"]').getAttribute('aria-current') === 'true');
       await page.keyboard.press('Escape');
       await page.locator('#inspector').waitFor({ state: 'hidden' });
       assert.equal(await page.locator('#inspector').isVisible(), false, 'first Escape closes Inspector only');
@@ -124,6 +146,8 @@ async function main() {
           const pane = document.getElementById('inspector');
           const card = pane.querySelector('.inspector-card');
           const row = document.querySelectorAll('.event-row')[7];
+          const prefix = row.querySelector('.event-kind');
+          const before = prefix.getBoundingClientRect();
           row.click();
           const slide = pane.getAnimations()[0];
           const fade = card.getAnimations()[0];
@@ -131,13 +155,17 @@ async function main() {
           fade.pause(); fade.currentTime = 100;
           const x = new DOMMatrixReadOnly(getComputedStyle(pane).transform).m41;
           const opacity = Number(getComputedStyle(card).opacity);
+          const during = prefix.getBoundingClientRect();
+          const stationary = before.x === during.x && before.y === during.y
+            && getComputedStyle(document.getElementById('trajectory-list')).opacity === '1';
           document.getElementById('close-inspector').click();
           const reverseX = new DOMMatrixReadOnly(getComputedStyle(pane).transform).m41;
           row.click(); // Reopen before the closing callback can hide the overlay.
-          return { x, opacity, reverseX };
+          return { x, opacity, reverseX, stationary };
         });
         assert.ok(motion.x > 0 && motion.x < 525, 'Inspector traverses intermediate positions');
         assert.ok(motion.opacity > 0 && motion.opacity < 1, 'Inspector contents fade progressively');
+        assert.ok(motion.stationary, 'left timeline column does not slide or dim during the animation');
         assert.ok(Math.abs(motion.reverseX - motion.x) < 2, 'reversal starts from the current position without jumping');
         await page.waitForFunction(() => document.getElementById('inspector').dataset.phase === 'open');
         await page.waitForTimeout(220);
@@ -213,7 +241,7 @@ async function main() {
       passed++;
       await context.close();
     }
-    console.log(`PASS: ${passed} sidebar UI scenarios (6 quota states × 2 themes × 3 DPI scales), flat timeline / call markers / rail / raw / safe text / scroll restoration. Screenshots: ${output}`);
+    console.log(`PASS: ${passed} sidebar UI scenarios (6 quota states × 2 themes × 3 DPI scales), stationary original timeline / summary-only drawer / narrow gutter / reversible motion / raw / safe text / scroll restoration. Screenshots: ${output}`);
   } finally {
     await browser.close();
     await new Promise(resolve => server.close(resolve));

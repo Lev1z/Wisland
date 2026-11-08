@@ -61,12 +61,13 @@ footer { margin-top: 4px; display: flex; flex-shrink: 0; align-items: center; mi
 .session-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 #runtime-session { width: 100%; flex-shrink: 0; min-width: 0; height: 26px; margin: 0 0 8px; padding: 0 6px; font: inherit; font-size: 11px; color: var(--muted); background: var(--hover); border: 1px solid var(--border); border-radius: 4px; }
 #runtime-session option { background: var(--surface); color: var(--text); }
-.trajectory-body { position: relative; flex: 1; min-height: 0; overflow: hidden; isolation: isolate; }
+.trajectory-body { --turn-column: 34px; --type-column: 28px; --event-bar: 3px; --event-gap: 6px; --inspector-left: calc(var(--turn-column) + var(--event-bar) + var(--type-column) + 3 * var(--event-gap)); position: relative; flex: 1; min-height: 0; overflow: hidden; isolation: isolate; }
 .trajectory-list { height: 100%; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; outline: none; }
-.trajectory-list, .event-rail, .inspector-content { scrollbar-width: thin; scrollbar-color: var(--track) transparent; }
-.event-row { display: grid; grid-template-columns: 47px 3px 28px minmax(0, 1fr); align-items: center; column-gap: 6px; width: 100%; height: 24px; padding: 0 5px 0 0; margin: 0; text-align: left; border: 0; border-bottom: 1px solid color-mix(in srgb, var(--border) 36%, transparent); border-radius: 0; background: transparent; font-size: 11px; }
+.trajectory-list, .inspector-content { scrollbar-width: thin; scrollbar-color: var(--track) transparent; }
+.event-row { display: grid; grid-template-columns: var(--turn-column) var(--event-bar) var(--type-column) minmax(0, 1fr); align-items: center; column-gap: var(--event-gap); width: 100%; height: 24px; padding: 0 5px 0 0; margin: 0; text-align: left; border: 0; border-bottom: 1px solid color-mix(in srgb, var(--border) 36%, transparent); border-radius: 0; background: transparent; font-size: 11px; }
 .event-row[data-turn-start="true"] { border-top: 1px solid var(--border); }
-.event-row:hover, .rail-event:hover { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.event-row:hover { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.event-row[aria-current="true"] { background: color-mix(in srgb, var(--accent) 24%, transparent); }
 .timeline-gutter { position: relative; height: 100%; min-width: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; border-right: 1px solid var(--border); color: var(--muted); font-size: 9px; line-height: 10px; font-variant-numeric: tabular-nums; }
 .timeline-turn { max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .request-marker { color: var(--accent); font: 9px/10px "Cascadia Code", Consolas, monospace; }
@@ -96,11 +97,7 @@ footer { margin-top: 4px; display: flex; flex-shrink: 0; align-items: center; mi
 .event-summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .runtime-empty { color: var(--muted); font-size: 12px; line-height: 1.8; white-space: pre-line; padding: 25px 10px; text-align: center; }
 .runtime-notice { flex-shrink: 0; font-size: 10px; line-height: 15px; color: var(--muted); padding-top: 6px; max-height: 36px; overflow: hidden; }
-.inspector { position: absolute; inset: 0; display: flex; gap: 5px; background: var(--surface); border-radius: 6px; }
-.event-rail { width: 51px; flex-shrink: 0; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; }
-.rail-event { width: 49px; height: 24px; border: 0; border-radius: 3px; background: transparent; padding: 3px 4px; display: flex; align-items: center; gap: 5px; font-size: 11px; }
-.rail-event .event-color { width: 5px; height: 18px; }
-.rail-event[aria-current="true"] { background: var(--track); }
+.inspector { position: absolute; inset: 0 0 0 var(--inspector-left); display: flex; z-index: 1; background: var(--surface); border-left: 1px solid var(--border); border-radius: 6px 0 0 6px; }
 .inspector-card { min-width: 0; flex: 1; display: flex; flex-direction: column; background: var(--hover); border-radius: 6px; padding: 8px; }
 .inspector-heading { display: flex; align-items: center; gap: 4px; min-height: 30px; flex-shrink: 0; }
 #inspector-title { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-left: 3px solid var(--event-color); padding-left: 6px; flex: 1; }

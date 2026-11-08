@@ -19,7 +19,6 @@ type EventDetail = {
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const list = el("trajectory-list");
 const inspector = el("inspector");
-const rail = el("event-rail");
 const sessionSelect = el<HTMLSelectElement>("runtime-session");
 const kinds: Record<string, string> = {
   user: "用户", assistant: "助手", summary: "摘要", tool: "工具", result: "结果",
@@ -52,38 +51,36 @@ function motionEnabled(): boolean {
 function resetInspector(): void {
   transitionSerial++;
   paneAnimations.forEach(animation => animation.cancel()); paneAnimations = [];
-  inspectorPhase = "closed"; inspector.hidden = true; inspector.inert = false; list.inert = false;
+  inspectorPhase = "closed"; inspector.hidden = true; inspector.inert = false;
   inspector.dataset.phase = "closed"; followAfterClose = false;
-  inspector.style.transform = ""; inspectorCard.style.opacity = ""; list.style.opacity = "";
+  inspector.style.transform = ""; inspectorCard.style.opacity = "";
+  updateSelection();
 }
 function transitionInspector(open: boolean, complete: () => void = () => {}): void {
   const fresh = inspectorPhase === "closed";
   const transform = fresh ? "translateX(100%)" : getComputedStyle(inspector).transform;
   const opacity = fresh ? "0" : getComputedStyle(inspectorCard).opacity;
-  const listOpacity = getComputedStyle(list).opacity;
   const serial = ++transitionSerial;
   paneAnimations.forEach(animation => animation.cancel()); paneAnimations = [];
   inspectorPhase = open ? "opening" : "closing";
   inspector.dataset.phase = inspectorPhase;
-  inspector.hidden = false; inspector.inert = !open; list.inert = true;
+  inspector.hidden = false; inspector.inert = !open;
   const finish = (): void => {
     if (serial !== transitionSerial) return;
     inspector.style.transform = open ? "none" : "translateX(100%)";
     inspectorCard.style.opacity = open ? "1" : "0";
-    list.style.opacity = open ? ".24" : "1";
     paneAnimations.forEach(animation => animation.cancel()); paneAnimations = [];
     inspectorPhase = open ? "open" : "closed";
     inspector.dataset.phase = inspectorPhase;
-    inspector.hidden = !open; inspector.inert = false; list.inert = open;
+    inspector.hidden = !open; inspector.inert = false;
     complete();
   };
   if (!motionEnabled()) { finish(); return; }
-  const duration = open ? 260 : 190;
+  const duration = open ? 300 : 220;
   const timing: KeyframeAnimationOptions = { duration, easing: open ? "cubic-bezier(.2,.75,.25,1)" : "cubic-bezier(.4,0,.7,.2)", fill: "both" };
   paneAnimations = [
     inspector.animate([{ transform }, { transform: open ? "translateX(0)" : "translateX(100%)" }], timing),
     inspectorCard.animate([{ opacity }, { opacity: open ? 1 : 0 }], { ...timing, delay: open && fresh ? 35 : 0, duration: duration - (open && fresh ? 35 : 0) }),
-    list.animate([{ opacity: listOpacity }, { opacity: open ? .24 : 1 }], timing),
   ];
   void Promise.all(paneAnimations.map(animation => animation.finished.catch(() => {}))).then(finish);
 }
@@ -119,7 +116,7 @@ function setFollowing(value: boolean): void {
   el("follow").setAttribute("aria-pressed", String(value));
 }
 function turnLabel(event: RuntimeEvent): string {
-  return event.turnNumber == null ? "未关联" : `第 ${event.turnNumber} 轮`;
+  return event.turnNumber == null ? "未关联" : `第${event.turnNumber}轮`;
 }
 function renderList(): void {
   if (!state) return;
@@ -130,35 +127,47 @@ function renderList(): void {
   const anchor = [...list.querySelectorAll<HTMLElement>(".event-row")].find(e => e.getBoundingClientRect().top >= top);
   const anchorOffset = anchor ? anchor.getBoundingClientRect().top - top : 0;
   const focused = (document.activeElement as HTMLElement)?.dataset.event;
-  const fragment = document.createDocumentFragment();
+  const existing = new Map([...list.querySelectorAll<HTMLButtonElement>(".event-row")].map(row => [row.dataset.event!, row]));
+  const rows: HTMLButtonElement[] = [];
   let previousTurn: string | null = null;
   // File order is the timeline order: never move a delayed result back beside
   // its tool call. call_id association remains available inside Inspector.
   for (const event of state.events) {
-    const row = button("event-row", "", () => void openEvent(event.id));
+    const row = existing.get(event.id) ?? button("event-row", "", () => void openEvent(event.id));
     const firstInTurn = event.turnId !== previousTurn;
     row.dataset.event = event.id;
     row.dataset.kind = event.kind;
     row.dataset.turnStart = String(firstInTurn);
     const status = statuses[state.turnStatus[event.turnId]] ?? "未记录结束状态";
     row.title = `${turnLabel(event)} · ${status}\n${kinds[event.kind] ?? "记录"} · ${event.summary}`;
-    const gutter = node("span", "timeline-gutter");
-    if (firstInTurn) gutter.append(node("span", "timeline-turn", turnLabel(event)));
-    if (event.modelCall) {
-      row.dataset.modelCall = event.modelCall.responseId;
-      const marker = node("span", "request-marker", `#${event.modelCall.number}`);
-      marker.title = `模型调用 #${event.modelCall.number} 完成\nresponse_id: ${event.modelCall.responseId}\n此处为完成记录，未推算请求起点或耗时`;
-      marker.setAttribute("aria-label", marker.title);
-      gutter.append(marker);
+    const renderKey = JSON.stringify([event, firstInTurn]);
+    if (row.dataset.renderKey !== renderKey) {
+      const gutter = node("span", "timeline-gutter");
+      if (firstInTurn) gutter.append(node("span", "timeline-turn", turnLabel(event)));
+      if (event.modelCall) {
+        row.dataset.modelCall = event.modelCall.responseId;
+        const marker = node("span", "request-marker", `#${event.modelCall.number}`);
+        marker.title = `模型调用 #${event.modelCall.number} 完成\nresponse_id: ${event.modelCall.responseId}\n此处为完成记录，未推算请求起点或耗时`;
+        marker.setAttribute("aria-label", marker.title);
+        gutter.append(marker);
+      } else { delete row.dataset.modelCall; }
+      row.replaceChildren(gutter, node("i", "event-color"), node("span", "event-kind", kinds[event.kind] ?? "记录"), node("span", "event-summary", event.summary || "（空内容）"));
+      row.dataset.renderKey = renderKey;
     }
-    row.append(gutter, node("i", "event-color"), node("span", "event-kind", kinds[event.kind] ?? "记录"), node("span", "event-summary", event.summary || "（空内容）"));
-    fragment.append(row);
+    rows.push(row);
     previousTurn = event.turnId;
   }
-  if (!state.events.length) fragment.append(node("p", "runtime-empty", state.sessionId ? "等待这份日志写入可展示的事件…" : "暂无本地轨迹\n开始一轮 Codex 对话后，这里会自动更新。"));
-  list.replaceChildren(fragment);
-  if (selected) { list.scrollTop = savedScroll; }
-  else if (following) { list.scrollTop = list.scrollHeight; }
+  // Reconcile in place: the exposed timeline IS the Inspector navigation.
+  // Pinning a session or appending a record must not replace/reparent its rows.
+  let cursor = list.firstElementChild;
+  for (const row of rows) {
+    if (row === cursor) cursor = cursor.nextElementSibling;
+    else list.insertBefore(row, cursor);
+  }
+  while (cursor) { const next = cursor.nextElementSibling; cursor.remove(); cursor = next; }
+  if (!rows.length) list.append(node("p", "runtime-empty", state.sessionId ? "等待这份日志写入可展示的事件…" : "暂无本地轨迹\n开始一轮 Codex 对话后，这里会自动更新。"));
+  updateSelection();
+  if (following && !selected) { list.scrollTop = list.scrollHeight; }
   else {
     const next = anchor && [...list.querySelectorAll<HTMLElement>(".event-row")].find(e => e.dataset.event === anchor.dataset.event);
     list.scrollTop = previousTop;
@@ -180,22 +189,13 @@ function accept(snapshot: Snapshot): void {
   renderSessionOptions(snapshot);
   el("runtime-notice").textContent = snapshot.error ?? snapshot.notice;
   renderList();
-  if (selected && inspectorPhase !== "closing") { renderRail(); void loadDetail(selected, false); }
+  if (selected && inspectorPhase !== "closing") { void loadDetail(selected, false); }
 }
 
-function renderRail(): void {
-  const scroll = rail.scrollTop;
-  rail.replaceChildren(...(state?.events ?? []).map(event => {
-    const item = button("rail-event", "", () => void openEvent(event.id));
-    item.dataset.kind = event.kind;
-    item.dataset.event = event.id;
-    item.setAttribute("aria-label", `${kinds[event.kind] ?? "记录"} · ${event.summary}`);
-    item.setAttribute("aria-current", String(event.id === selected));
-    item.title = `${turnLabel(event)} · ${event.modelCall ? `模型调用 #${event.modelCall.number} · ` : ""}${event.summary}`;
-    item.append(node("i", "event-color"), node("span", "event-kind", kinds[event.kind] ?? "记录"));
-    return item;
-  }));
-  rail.scrollTop = scroll;
+function updateSelection(): void {
+  for (const row of list.querySelectorAll<HTMLElement>(".event-row")) {
+    row.setAttribute("aria-current", String(row.dataset.event === selected));
+  }
 }
 async function openEvent(id: string): Promise<void> {
   if (!state?.sessionId) return;
@@ -218,8 +218,7 @@ async function openEvent(id: string): Promise<void> {
   el("inspector-title").textContent = event ? `${kinds[event.kind] ?? "记录"} · ${event.summary}` : "事件详情";
   el("inspector-content").textContent = "正在读取…";
   if (opening) transitionInspector(true);
-  renderRail();
-  [...rail.querySelectorAll<HTMLElement>("button")].find(b => b.dataset.event === id)?.scrollIntoView({ block: "nearest" });
+  updateSelection();
   el("close-inspector").focus({ preventScroll: true });
   if (fresh && pinPromise) {
     try {
@@ -290,6 +289,7 @@ export function closeInspector(): boolean {
   requestSerial++;
   transitionInspector(false, () => {
     selected = null; detail = null;
+    updateSelection();
     // Preserve the list throughout the transition; hide the overlay only at its end.
     if (followAfterClose) { setFollowing(true); list.scrollTop = list.scrollHeight; }
     else { list.scrollTop = savedScroll; }

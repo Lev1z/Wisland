@@ -128,7 +128,7 @@ Wisland 直接读写你选择的本地 Vault。配置日记目录后，可在胶
 Wisland/
 ├─ src/                     # TypeScript 前端
 │  ├─ modules/             # 胶囊交互、媒体、Codex、Obsidian 等功能模块
-│  ├─ runtime.ts           # 轨迹层级、会话切换和内嵌 Inspector
+│  ├─ runtime.ts           # 统一时间线、会话切换和摘要区域 Inspector 抽屉
 │  └─ assets/              # 应用图标与前端静态资源
 ├─ public/
 │  ├─ themes/              # 内置胶囊主题
