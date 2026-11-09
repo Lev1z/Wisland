@@ -36,7 +36,8 @@ async function main() {
   const browser = await chromium.launch({ channel: 'msedge', headless: true });
   let passed = 0;
   try {
-    for (const scale of [1, 1.25, 2]) for (const theme of ['dark', 'light']) for (const scenario of cases) {
+    const selectedCases = process.argv.includes('--inspector-only') ? cases.filter(c => c.name === 'dual') : cases;
+    for (const scale of [1, 1.25, 2]) for (const theme of ['dark', 'light']) for (const scenario of selectedCases) {
       const context = await browser.newContext({ viewport: { width: 525, height: 850 }, deviceScaleFactor: scale, colorScheme: theme });
       const page = await context.newPage();
       const errors = [];
@@ -332,7 +333,7 @@ async function main() {
       passed++;
       await context.close();
     }
-    console.log(`PASS: ${passed} sidebar UI scenarios (6 quota states × 2 themes × 3 DPI scales), bounded long-title picker at 360/850px / keyboard and Escape priority / stationary timeline / reversible Inspector / safe text / scroll restoration. Screenshots: ${output}`);
+    console.log(`PASS: ${passed} sidebar UI scenarios (${selectedCases.length} quota states × 2 themes × 3 DPI scales), bounded long-title picker at 360/850px / keyboard and Escape priority / stationary timeline / reversible Inspector / safe text / scroll restoration. Screenshots: ${output}`);
   } finally {
     await browser.close();
     await new Promise(resolve => server.close(resolve));

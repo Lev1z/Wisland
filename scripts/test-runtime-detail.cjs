@@ -311,4 +311,34 @@ test('context mixed content and unknown fields remain inspectable', () => {
   const malformed = overviewFor(entry('context', { full: false, state: 'truncated' }, '', { sourceType: 'world_state.' }));
   assert.ok(malformed.blocks.some(b => b.text.includes('truncated')));
 });
+test('compaction separates summary, retained history and usage checkpoints', () => {
+  const detail = entry('compaction', { message: '# Goal\n\nKeep the actual summary.', compaction_response_id: 'r1', latest_token_usage_record: { thread_token_usage: { total_tokens: 1000 }, usage: { total_tokens: 100 } }, replacement_history: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Original request' }] }] }, '', { sourceType: 'compacted.compacted' });
+  const original = JSON.stringify(detail);
+  const model = overviewFor(detail);
+  assert.equal(model.blocks.find(b => b.id === 'compaction-summary').format, 'markdown');
+  assert.equal(model.blocks.find(b => b.id === 'history-0').secondary, true);
+  assert.equal(model.blocks.find(b => b.id === 'compaction-usage').secondary, true);
+  assert.equal(model.technical.compaction_response_id, 'r1');
+  assert.ok(!model.facts.some(f => /耗时|比例|成功/.test(f.label)));
+  assert.equal(JSON.stringify(detail), original);
+});
+test('empty summary exposes retained context without calling it a summary', () => {
+  const model = overviewFor(entry('compaction', { message: '', replacement_history: [{ type: 'message', role: 'developer', content: '## Rules\n- Actual instruction' }, { type: 'reasoning', content: 'HIDDEN_REASONING' }, { type: 'message', role: 'user', content: [{ type: 'image', url: 'omitted' }] }] }, '', { sourceType: 'compacted.compacted' }));
+  assert.ok(model.lead.text.includes('未附带'));
+  assert.ok(!model.blocks.some(b => b.title === '压缩摘要'));
+  assert.equal(model.blocks[0].format, 'markdown');
+  assert.notEqual(model.blocks[0].secondary, true);
+  assert.ok(!JSON.stringify(model).includes('HIDDEN_REASONING'));
+  assert.ok(model.blocks.some(b => b.text.includes('原始内容')));
+  const notification = overviewFor(entry('compaction', { type: 'context_compacted', message: 'notification only' }, '', { sourceType: 'event_msg.context_compacted' }));
+  assert.ok(!notification.blocks.some(b => b.id === 'compaction-summary'));
+  assert.ok(notification.blocks.some(b => b.text.includes('notification only')));
+});
+test('compaction malformed and bounded history remain truthful', () => {
+  const malformed = overviewFor(entry('compaction', { message: '', replacement_history: 'truncated [已截断]', extra: false }));
+  assert.ok(malformed.blocks[0].text.includes('truncated'));
+  const large = overviewFor(entry('compaction', { replacement_history: Array.from({ length: 30 }, () => ({ type: 'message', role: 'assistant', content: 'text' })) }));
+  assert.equal(large.blocks.filter(b => /^history-\d+$/.test(b.id)).length, 24);
+  assert.ok(large.blocks.some(b => b.id === 'history-limit'));
+});
 console.log(`PASS: ${tests} Inspector presentation-model tests`);

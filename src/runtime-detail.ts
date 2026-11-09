@@ -335,6 +335,47 @@ export function overviewFor(detail: EventDetail): DetailOverview {
     const other = Object.fromEntries(Object.entries(p).filter(([key]) => !consumed.includes(key)));
     if (Object.keys(other).length) block("lifecycle-extra", "其他记录字段", other, { secondary: true });
     for (const key of ["root_turn_id", "time_to_first_token_ms"]) if (present(p[key])) model.technical[key] = p[key];
+  } else if (event.kind === "compaction") {
+    const rest = { ...p }; delete rest.type;
+    // A persisted compacted item's message is its summary. Notification records
+    // with the same UI kind do not necessarily carry that semantic meaning.
+    const summary = event.sourceType.startsWith("compacted.") ? prose(p.message) : undefined;
+    if (summary !== undefined) {
+      block("compaction-summary", "压缩摘要", summary, { format: "markdown", text: summary });
+      delete rest.message;
+    } else {
+      model.lead = { text: "此记录未附带可识别的摘要正文。" };
+      if (p.message === "") delete rest.message;
+    }
+    for (const key of ["compaction_response_id", "first_window_id", "previous_window_id"]) {
+      if (present(p[key])) { model.technical[key] = p[key]; delete rest[key]; }
+    }
+    if (Array.isArray(p.replacement_history)) {
+      const history = p.replacement_history;
+      model.facts.push({ label: "已保留历史条目", value: String(history.length) });
+      const roles: Record<string, string> = { user: "用户消息", assistant: "助手消息", developer: "开发者指令", system: "系统指令", context: "上下文消息" };
+      history.slice(0, 24).forEach((value, index) => {
+        const item = object(value);
+        const role = typeof item.role === "string" && Object.prototype.hasOwnProperty.call(roles, item.role) ? roles[item.role] : undefined;
+        const text = item.type === "message" && role ? prose(item.content) : undefined;
+        const title = `保留上下文 ${index + 1} · ${role ?? "其他记录"}`;
+        if (text !== undefined) {
+          block(`history-${index}`, title, text, { format: "markdown", text, secondary: summary !== undefined });
+          const extra = { ...item }; delete extra.type; delete extra.role; delete extra.content;
+          if (Object.keys(extra).length) block(`history-${index}-extra`, `${title} · 附加字段`, extra, { secondary: true });
+        } else {
+          // Do not promote unknown records or hidden reasoning bodies into prose.
+          block(`history-${index}`, `保留条目 ${index + 1}`, `类型：${typeof item.type === "string" ? item.type : "未识别"}；结构化内容请在原始内容页查看。`, { secondary: true });
+        }
+      });
+      if (history.length > 24) block("history-limit", "展示范围", `概述列出前 24 条已保留历史，其余见原始内容页。`);
+      delete rest.replacement_history;
+    }
+    if (present(p.latest_token_usage_record)) {
+      block("compaction-usage", "恢复用量检查点", p.latest_token_usage_record, { secondary: true });
+      delete rest.latest_token_usage_record;
+    }
+    if (Object.keys(rest).length) block("compaction-extra", "其他压缩字段", rest, { secondary: true });
   } else if (event.kind === "context") {
     const markdown = (id: string, title: string, value: unknown): boolean => {
       const text = prose(value);
