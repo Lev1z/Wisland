@@ -100,6 +100,8 @@ Inspector 另有独立呈现模型测试及深浅色 / 三 DPI 界面用例：�
 
 阅读模板回归还覆盖 shell 启动器的保守提取、批量返回独立计时、内部失败、未结束进程句柄、引号 / 大括号 / Windows 路径、截断回退、解析数量上限、本轮首 token 作用域和最终回复 Markdown；界面用例验证复制、技术信息默认隐藏、原始记录保留及无外部资源请求。
 
+前置模型标题的 release 原生回归覆盖待关联标题原位补全、用量与明确完成的状态区分、工具及结果关联，以及分页日志切换后的保守边界：新来源中尚无响应身份的输出保留独立待关联标题，不继承旧日志的完成状态；被历史截止位置排除的后续追加不得改变任何已有行身份。
+
 参考源码（只读、未复制其组件）：Codex 的 `protocol/src/protocol.rs`（`TokenUsageRecord` / `RawResponseCompletedEvent`）、`protocol/src/models.rs`、`protocol/src/items.rs`、`history/src/rollout_payload.rs`、`rollout/src/policy.rs`、`rollout/src/rollout_file_name.rs`、`rollout/src/rollout_reference_index.rs`、`thread-store/src/local/rollout_lineage.rs` / `revert_thread.rs`；DSH 的 `packages/client/ui-trajectory/src/client/TrajectoryTable.tsx`、`TrajectoryTable.module.css`、`trajectory-virtual-rows.ts`。Wisland 使用自己的 Rust 增量读取器及 Vanilla TypeScript 视图，不引入 DSH 运行时依赖。
 
 会话、分支与回退语义参见 [OpenAI Codex App Server 文档](https://learn.chatgpt.com/docs/app-server)；磁盘文件与历史引用布局依据上述本地源码。排查会话列表可显式指定 `WISLAND_RUNTIME_AUDIT_HOME`，运行 `cargo test --lib audit_local_catalog -- --ignored --nocapture`，只读输出会话数量、名称覆盖率及历史缺失分类，不输出对话正文。

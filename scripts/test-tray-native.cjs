@@ -207,11 +207,25 @@ async function main() {
         try { db.exec('PRAGMA busy_timeout=2000'); db.prepare('UPDATE threads SET rollout_path=? WHERE id=?').run(replacement, runtimeThreadId); }
         finally { db.close(); }
       }
-      await until(async () => { const value = await invoke('get_runtime_snapshot'); return value.sessions.length === 1 && value.sessions[0].rolloutCount === 2 && value.events.length === 6; }, 'same-thread generations merged with retained history');
+      const replacementSnapshot = await until(async () => {
+        const value = await invoke('get_runtime_snapshot');
+        return value.sessions.length === 1 && value.sessions[0].rolloutCount === 2
+          && value.events.some(e => e.summary === 'replacement continuation') && value;
+      }, 'same-thread generations merged with retained history');
+      // A new source without a response identity must not inherit the previous
+      // rollout's completed model call. Its output has its own pending heading.
+      assert.equal(replacementSnapshot.events.length, 7, 'retained history plus pending heading and new output');
+      const continuationIndex = replacementSnapshot.events.findIndex(e => e.summary === 'replacement continuation');
+      const continuationHeader = replacementSnapshot.events[continuationIndex - 1];
+      assert.equal(continuationHeader.kind, 'model');
+      assert.equal(continuationHeader.status, 'awaiting_association');
+      assert.equal(continuationHeader.modelCall, null, 'a source change must not invent a response identity');
+      assert.equal(replacementSnapshot.events.filter(e => e.modelCall?.responseId === 'qa-response').length, 1, 'the retained confirmed heading remains unique');
       await fs.appendFile(runtimeFile, record('event_msg', { type: 'agent_message', message: 'abandoned suffix must not appear' }));
       await pause(3500);
       const retained = await invoke('get_runtime_snapshot');
-      assert.equal(retained.sessionId, initial.sessionId); assert.equal(retained.events.length, 6);
+      assert.equal(retained.sessionId, initial.sessionId);
+      assert.deepEqual(retained.events.map(e => e.id), replacementSnapshot.events.map(e => e.id), 'an abandoned suffix cannot add rows or change heading identities');
       assert.ok(!retained.events.some(e => e.summary.includes('abandoned')));
       const forkId = '019a6b3c-1234-5678-9abc-0123456789ad';
       const second = path.join(runtimeHome, `sessions/rollout-2026-11-09T12-32-00-${forkId}.jsonl`);
@@ -221,7 +235,7 @@ async function main() {
       await until(async () => (await invoke('get_runtime_snapshot')).sessions.length === 2, 'new session discovery');
       assert.equal((await invoke('get_runtime_snapshot')).sessionId, initial.sessionId, 'pinned session must not switch');
       assert.notEqual((await invoke('select_runtime_session', { id: null })).sessionId, initial.sessionId, 'auto mode chooses latest active log');
-      console.log('PASS: native JSONL append / split UTF-8 / results / model markers / logical thread dedup / history cutoffs / distinct forks / path rejection / pinned and automatic sessions');
+      console.log('PASS: native JSONL append / split UTF-8 / results / model heading promotion / evidence-based completion / cross-source pending heading / logical thread dedup / history cutoffs / distinct forks / path rejection / pinned and automatic sessions');
     }
     // Stabilize the first account response before testing motion geometry. A
     // weekly-only account legitimately removes the initial placeholder 5h row.
