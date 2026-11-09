@@ -1,6 +1,6 @@
 // In-WebView listbox: native <select> popups size themselves to the longest label
 // and can extend beyond a narrow desktop window.
-export type SessionOption = { value: string; title: string; tooltip: string; branch?: boolean };
+export type SessionOption = { value: string; title: string; tooltip: string; depth?: number };
 
 export class SessionPicker {
   private button = document.getElementById("runtime-session") as HTMLButtonElement;
@@ -44,7 +44,11 @@ export class SessionPicker {
       this.panel.replaceChildren(...options.map((option, index) => {
         const row = document.createElement("div");
         row.className = "session-option"; row.id = `session-option-${index}`;
-        row.dataset.value = option.value; row.dataset.branch = String(!!option.branch);
+        const depth = Math.max(0, Math.floor(option.depth ?? 0));
+        row.dataset.value = option.value; row.dataset.branch = String(depth > 0); row.dataset.depth = String(depth);
+        // Retain real depth for diagnostics; cap visual indentation so deep
+        // forks still leave room for text inside the fixed-width sidebar.
+        row.style.setProperty("--session-indent", `${depth > 0 ? 24 + (Math.min(depth, 5) - 1) * 16 : 2}px`);
         row.setAttribute("role", "option"); row.title = option.tooltip;
         const title = document.createElement("span"); title.className = "session-option-title"; title.textContent = option.title;
         row.append(title);

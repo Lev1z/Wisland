@@ -7,6 +7,7 @@ const fs = require('node:fs/promises');
 const http = require('node:http');
 const path = require('node:path');
 const { checkInspector } = require('./test-inspector-ui.cjs');
+const { checkSessionHierarchy } = require('./test-session-picker-ui.cjs');
 const root = path.resolve(__dirname, '../dist');
 const output = path.resolve(__dirname, '../target/tray-ui-qa');
 const quotaWindow = (remainingPercent) => ({ remainingPercent, resetsAt: Math.floor(Date.now() / 1000) + 8300 });
@@ -100,6 +101,7 @@ async function main() {
       await page.keyboard.press('Escape');
       assert.equal(await page.locator('#runtime-sessions').isVisible(), false);
       assert.equal(await page.evaluate(() => window.qaCommands.filter(c => c.command === 'set_tray_expanded').length), hideCount, 'Escape closes the picker without hiding the sidebar');
+      if (scenario.name === 'dual') await checkSessionHierarchy(page, { theme, scale, output });
       await page.evaluate(() => {
         window.qaOriginalSessions = window.qaRuntime.sessions;
         window.qaRuntime.sessions = [...window.qaOriginalSessions, ...Array.from({ length: 45 }, (_, i) => ({

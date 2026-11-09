@@ -1,5 +1,9 @@
 # Codex Runtime 侧栏（v0.2.1）
 
+## 后续修复（未发布）
+
+会话选择器以**当前可见的父子关系**绘制分组。历史父会话已归档、日志缺失或不在最近会话列表中时，该分支作为独立组显示真实会话名，不再使用匿名分支缩进接在上一组后面；其子分支继续按真实 ID 归属。多层分支逐层缩进，深层缩进设上限以保留侧栏内的文字宽度。关闭选择框后的标题采用同样规则。历史 `forked_from_id` 仍保留在悬停说明中，不改写 Codex 数据，也不按同名会话合并。
+
 ## 使用
 
 切换到托盘态后，点击标准系统托盘图标。原有详情窗口现在沿显示器右侧展开，内容宽度为 525 个逻辑像素，高度覆盖可用工作区，不遮挡任务栏。顶部保持状态与 5h / Weekly 额度；缺失的额度窗口不显示。
@@ -59,6 +63,7 @@ Windows 无标题栏窗口仍有非客户区边距。Tauri `set_size` 接收客�
 npm run build
 npm run test:version
 npm run test:runtime-detail
+npm run test:session-options
 cd src-tauri
 cargo test --lib
 cargo build

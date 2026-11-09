@@ -1,11 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { SessionPicker, type SessionOption } from "./session-picker";
+import { SessionPicker } from "./session-picker";
+import { buildSessionOptions, type RuntimeSession } from "./session-options";
 import { type EventDetail, type RuntimeEvent } from "./runtime-detail";
 import { detailTitle, renderDetailContent } from "./runtime-detail-view";
 type Snapshot = {
   revision: number; sessionId: string | null; automatic: boolean;
-  sessions: { id: string; label: string; modified: number; threadId?: string | null; fileName?: string; forkedFromId?: string | null; parentLabel?: string | null; rolloutCount?: number; selectionNote?: string }[];
+  sessions: RuntimeSession[];
   events: RuntimeEvent[]; turnStatus: Record<string, string>; notice: string; error: string | null;
 };
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -80,22 +81,10 @@ function transitionInspector(open: boolean, complete: () => void = () => {}): vo
 
 function renderSessionOptions(snapshot: Snapshot): void {
   const current = snapshot.sessions.find(s => s.id === snapshot.sessionId);
-  const displayName = (session: Snapshot["sessions"][number]): string => session.forkedFromId
-    ? `分支 · ${(session.threadId ?? session.id).slice(0, 8)}` : session.label;
-  const options: SessionOption[] = [{ value: "", title: "自动跟随", tooltip: `自动跟随最近活跃会话\n当前：${current?.label ?? "暂无会话"}` }];
-  const visited = new Set<string>();
-  const add = (session: Snapshot["sessions"][number]): void => {
-    if (visited.has(session.id)) return;
-    visited.add(session.id);
-    const branch = !!session.forkedFromId;
-    options.push({ value: session.id, title: displayName(session), branch,
-      tooltip: [session.label, session.threadId ?? session.id, branch ? `源自 ${session.parentLabel ?? session.forkedFromId}` : "", (session.rolloutCount ?? 1) > 1 ? `${session.rolloutCount} 份日志` : "", session.selectionNote].filter(Boolean).join("\n") });
-    snapshot.sessions.filter(s => s.forkedFromId === session.id).forEach(add);
-  };
-  snapshot.sessions.filter(s => !s.forkedFromId || !snapshot.sessions.some(p => p.id === s.forkedFromId)).forEach(add);
-  snapshot.sessions.forEach(add); // Defensive cycle handling, never omit an entry.
+  const options = buildSessionOptions(snapshot.sessions, snapshot.sessionId);
+  const caption = options.find(option => option.value === current?.id)?.title ?? "最近活跃";
   sessionPicker.update(options, snapshot.automatic ? "" : snapshot.sessionId ?? "",
-    `${snapshot.automatic ? "自动 · " : ""}${current ? displayName(current) : "最近活跃"}`,
+    `${snapshot.automatic ? "自动 · " : ""}${caption}`,
     current ? `${current.label}\n${current.fileName ?? current.id}` : "尚未发现会话");
 }
 
