@@ -119,6 +119,9 @@ footer { margin-top: 4px; display: flex; flex-shrink: 0; align-items: center; mi
 .inspector-tabs [aria-selected="true"] { background: var(--detail-surface); color: var(--text); }
 .inspector-content { overflow: auto; flex: 1; min-height: 0; min-width: 0; user-select: text; outline: none; scrollbar-gutter: stable; padding: 0 2px 4px; font-size: 13px; }
 .detail-section { min-width: 0; margin: 0 0 12px; }
+.detail-lead { margin: 0 0 12px; padding: 10px 12px; border-left: 3px solid var(--accent); border-radius: 4px; background: var(--detail-surface); font-size: 13px; font-weight: 600; line-height: 1.6; overflow-wrap: anywhere; }
+.detail-outcome { margin: 0 0 6px; font-weight: 600; font-size: 13px; line-height: 1.6; }
+.detail-report { margin: 0 0 8px; padding: 7px 9px; border-radius: 4px; background: var(--hover); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
 .detail-section + .detail-section { border-top: 1px solid var(--border); padding-top: 10px; }
 .detail-section-heading { display: flex; align-items: center; min-height: 26px; gap: 8px; margin-bottom: 5px; }
 .detail-section-title { font-size: 12px; font-weight: 600; flex: 1; color: var(--muted); }

@@ -160,7 +160,7 @@ async function main() {
       await popup.locator('.event-row[data-kind="tool"]').click();
       await popup.waitForFunction(() => document.getElementById('inspector').dataset.phase === 'open'
         && document.getElementById('inspector-content').textContent.includes('中文执行结果'));
-      assert.equal(await popup.locator('#inspector-title').textContent(), 'exec_command');
+      assert.equal(await popup.locator('#inspector-title').textContent(), '执行命令');
       assert.equal(await popup.locator('[data-section="command"] pre').textContent(), 'npm test');
       assert.equal((await popup.locator('#inspector-content').textContent()).split('中文执行结果').length - 1, 1);
       assert.equal(await popup.locator('[data-section="technical"]').getAttribute('open'), null);

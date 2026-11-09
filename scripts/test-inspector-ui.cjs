@@ -59,11 +59,11 @@ exports.checkInspector = async function checkInspector(page, { theme, scale, out
   const tool = { type: 'function_call', name: 'exec_command', arguments: JSON.stringify({ cmd: 'npm run test\nnode scripts/check.cjs', workdir: 'D:\\Code', max_output_tokens: 1000 }) };
   const related = [{ event: { ...await page.evaluate(() => window.qaSavedEvent), id: 'result-1', kind: 'result', status: null }, detail: { byteOffset: 222, raw: { payload: { item: { type: 'FunctionCallOutput', output: JSON.stringify({ output: longText, exit_code: 1, wall_time_seconds: 0.9 }) } } }, content: longText } }];
   await show('tool', tool, 'exec_command ' + tool.arguments, { related });
-  assert.equal(await page.locator('#inspector-title').textContent(), 'exec_command');
+  assert.equal(await page.locator('#inspector-title').textContent(), '执行命令');
   assert.equal((await page.locator('#inspector-content').textContent()).split('npm run test').length - 1, 1, 'command is not duplicated');
   assert.equal(await page.locator('[data-section="command"] pre').textContent(), 'npm run test\nnode scripts/check.cjs');
   assert.equal(await page.locator('[data-section="params"]').getAttribute('open'), null);
-  assert.ok((await page.locator('.detail-facts').textContent()).includes('退出码1'));
+  assert.ok((await page.locator('[data-section="related-result-1"] .detail-facts').textContent()).includes('退出码1'));
   assert.equal(await page.locator('.detail-facts [data-tone="error"]').textContent(), '1');
   const preview = page.locator('[data-section="related-result-1"]');
   await preview.locator('.detail-expand').waitFor({ state: 'visible' });
@@ -78,7 +78,7 @@ exports.checkInspector = async function checkInspector(page, { theme, scale, out
     window.qaDetailOverride.detail.raw.payload.status = 'completed';
     window.qaRuntime.revision++; window.qaEmit('runtime-snapshot', structuredClone(window.qaRuntime));
   });
-  await page.waitForFunction(() => document.querySelector('#inspector-content > .detail-facts')?.textContent.includes('已完成'));
+  await page.waitForFunction(() => document.querySelector('#inspector-content > .detail-lead')?.textContent.includes('执行已结束'));
   assert.equal(await preview.getAttribute('data-expanded'), 'true', 'live update keeps expanded preview');
   assert.notEqual(await page.locator('[data-section="technical"]').getAttribute('open'), null, 'live update keeps technical section open');
   assert.equal(await page.locator('#inspector-content').evaluate(e => e.scrollTop), readerScroll, 'live update keeps detail scroll');
@@ -134,6 +134,50 @@ exports.checkInspector = async function checkInspector(page, { theme, scale, out
   await show('context', { type: 'future_event', unexpected_field: '保留未知信息', very_long: 'x'.repeat(1800) }, 'future_event');
   assert.ok((await page.locator('[data-section="record"]').textContent()).includes('unexpected_field'));
   assert.ok(await page.locator('#inspector-content').evaluate(e => e.scrollWidth <= e.clientWidth), 'long fields wrap within Inspector');
+  const argv = ['C:\\Program Files\\WindowsApps\\OpenAI.CodexPrimaryRuntime\\pwsh.exe', '-NoProfile', '-Command', 'node scripts/test-tray-ui.cjs'];
+  await show('tool', { type: 'item_completed', item: { type: 'CommandExecution', command: argv, status: 'completed', exit_code: 0, duration_ms: 107582,
+    aggregated_output: 'PASS: 36 sidebar UI scenarios (6 quota states × 2 themes × 3 DPI scales)\nScreenshots: D:\\Code\\PROJECTS\\Wisland\\target\\tray-ui-qa' } }, 'raw command');
+  assert.equal(await page.locator('#inspector-title').textContent(), '执行命令');
+  assert.equal(await page.locator('.detail-lead').textContent(), '进程正常退出');
+  assert.equal(await page.locator('[data-section="command"] pre').textContent(), argv.at(-1));
+  assert.equal(await page.locator('.detail-report').textContent(), '输出报告：36 组界面测试通过');
+  assert.ok(!(await page.locator('#inspector-content').innerText()).includes('WindowsApps'), 'launcher plumbing stays out of the initial overview');
+  assert.ok((await page.locator('.detail-facts').textContent()).includes('1 分 47.6 秒'));
+  await page.locator('[data-section="command"] .detail-action').first().click();
+  assert.equal(await page.evaluate(() => window.qaCopied), argv.at(-1));
+  if (scale === 1.25) await page.screenshot({ path: path.join(output, `inspector-command-readable-${theme}.png`) });
+  await page.locator('#tab-raw').click();
+  assert.ok((await page.locator('[data-section="raw"] pre').textContent()).includes('WindowsApps'));
+  const batch = 'Script completed\nWall time 5.1 seconds\nOutput:\n' + [
+    { chunk_id: 'first', wall_time_seconds: 4.27, exit_code: 0, output: 'PASS: 36 sidebar UI scenarios, all passed\nC:\\new\\test' },
+    { chunk_id: 'second', wall_time_seconds: 0.59, exit_code: 2, output: 'Unable to read history\n<script>window.qaXss=true</script>\n<img src="https://inspector.invalid/leak">' },
+  ].map(value => JSON.stringify(value)).join('\n');
+  await show('result', { output: batch }, batch);
+  assert.equal(await page.locator('#inspector-title').textContent(), '批量调用结果');
+  assert.ok((await page.locator('.detail-lead').textContent()).includes('1 条异常'));
+  assert.equal(await page.locator('.detail-outcome').count(), 2);
+  assert.equal(await page.locator('[data-section="output-return-2"] .detail-outcome').getAttribute('data-tone'), 'error');
+  assert.equal(await page.locator('[data-section="output-return-1"] pre').textContent(), 'PASS: 36 sidebar UI scenarios, all passed\nC:\\new\\test');
+  assert.ok(!(await page.locator('#inspector-content').innerText()).includes('chunk_id'));
+  assert.equal(await page.locator('#inspector-content script, #inspector-content img').count(), 0);
+  await page.locator('[data-section="output-return-1"] .detail-action').first().click();
+  assert.equal(await page.evaluate(() => window.qaCopied), 'PASS: 36 sidebar UI scenarios, all passed\nC:\\new\\test');
+  if (scale === 1.25) await page.screenshot({ path: path.join(output, `inspector-batch-readable-${theme}.png`) });
+  const reply = '**已完成并提交** `71f1044`。\n\n- Inspector 完整展开\n- 托盘再次点击收起\n\n[下载测试版](D:/Code/PROJECTS/Wisland/target/test.exe)';
+  await show('lifecycle', { type: 'task_complete', duration_ms: 560760, time_to_first_token_ms: 3560, last_agent_message: reply, root_turn_id: 'ROOT_SENTINEL' }, '回合结束');
+  assert.equal(await page.locator('#inspector-title').textContent(), '本轮已结束');
+  assert.ok((await page.locator('.detail-facts').textContent()).includes('本轮耗时9 分 20.8 秒'));
+  assert.ok((await page.locator('.detail-facts').textContent()).includes('本轮首 token3.56 秒'));
+  assert.equal(await page.locator('[data-section="final-message"] strong').textContent(), '已完成并提交');
+  assert.equal(await page.locator('[data-section="final-message"] li').count(), 2);
+  assert.ok(!(await page.locator('#inspector-content').innerText()).includes('ROOT_SENTINEL'));
+  await page.locator('[data-section="final-message"] .detail-action').first().click();
+  assert.equal(await page.evaluate(() => window.qaCopied), reply);
+  assert.equal(await page.locator('#inspector-content a').count(), 0);
+  if (scale === 1.25) await page.screenshot({ path: path.join(output, `inspector-turn-readable-${theme}.png`) });
+  await page.locator('#tab-raw').click();
+  assert.ok((await page.locator('[data-section="raw"] pre').textContent()).includes('last_agent_message'));
+  assert.equal(await page.locator('[data-section="raw"]').getAttribute('data-expanded'), 'true');
   await show('assistant', { type: 'message' }, '# 验证结果\n\n**布局已更新。**\n\n- 命令和结果分别呈现\n- 关键状态前置\n- 技术信息默认折叠\n\n```ts\nconst readable = true;\n```\n\n| 检查 | 结果 |\n| --- | --- |\n| 窄栏排版 | 通过 |');
   if (scale === 1.25) await page.screenshot({ path: path.join(output, `inspector-message-${theme}.png`) });
   await page.setViewportSize({ width: 525, height: 360 });

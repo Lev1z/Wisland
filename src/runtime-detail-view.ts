@@ -57,7 +57,13 @@ export function renderDetailContent(container: HTMLElement, detail: EventDetail,
     if (!block.secondary) heading.append(copy);
     outer.append(heading);
     if (block.secondary) outer.append(copy);
+    if (block.notice) {
+      const notice = node("p", "detail-outcome", block.notice.text);
+      if (block.notice.tone) notice.dataset.tone = block.notice.tone;
+      outer.append(notice);
+    }
     if (block.facts?.length) outer.append(factList(block.facts));
+    if (block.report) outer.append(node("p", "detail-report", block.report));
     const body = node("div", `detail-preview ${block.format === "markdown" ? "detail-prose" : "detail-code"}`);
     if (block.format === "markdown") {
       try {
@@ -96,6 +102,11 @@ export function renderDetailContent(container: HTMLElement, detail: EventDetail,
     nodes.push(section({ id: "raw", title: "JSONL 记录", format: "json", text: JSON.stringify(detail.detail.raw, null, 2) }));
     if (detail.detail.mirror) nodes.push(section({ id: "mirror", title: "合并的另一条源记录", format: "json", text: JSON.stringify(detail.detail.mirror, null, 2) }));
   } else {
+    if (model.lead) {
+      const lead = node("p", "detail-lead", model.lead.text);
+      if (model.lead.tone) lead.dataset.tone = model.lead.tone;
+      nodes.push(lead);
+    }
     if (model.facts.length) nodes.push(factList(model.facts));
     nodes.push(...model.blocks.map(section));
     nodes.push(section({ id: "technical", title: "技术信息", format: "json", text: JSON.stringify(model.technical, null, 2), secondary: true }));
