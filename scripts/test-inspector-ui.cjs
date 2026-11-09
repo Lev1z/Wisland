@@ -131,9 +131,24 @@ exports.checkInspector = async function checkInspector(page, { theme, scale, out
   assert.equal(await page.locator('#inspector-title').textContent(), '模型调用 #3');
   assert.ok((await page.locator('.detail-facts').textContent()).includes('输入 token120'));
   assert.ok(!(await page.locator('.detail-facts').textContent()).includes('耗时'));
-  await show('context', { type: 'future_event', unexpected_field: '保留未知信息', very_long: 'x'.repeat(1800) }, 'future_event');
+  await show('record', { type: 'future_event', unexpected_field: '保留未知信息', very_long: 'x'.repeat(1800) }, 'future_event');
+  assert.equal(await page.locator('#inspector-title').textContent(), '其他记录');
   assert.ok((await page.locator('[data-section="record"]').textContent()).includes('unexpected_field'));
   assert.ok(await page.locator('#inspector-content').evaluate(e => e.scrollWidth <= e.clientWidth), 'long fields wrap within Inspector');
+  await show('context', { type: 'additional_tools', tools: [{ name: 'exec_command' }] }, '上下文工具更新');
+  assert.equal(await page.locator('#inspector-title').textContent(), '上下文记录');
+  const contextBadge = page.locator('.event-row[data-event="7"] .event-kind');
+  assert.equal(await contextBadge.textContent(), '上下文');
+  assert.ok(await contextBadge.evaluate(e => e.scrollWidth <= e.clientWidth && e.getBoundingClientRect().right < document.getElementById('inspector').getBoundingClientRect().left), 'three-character context badge fits and stays exposed beside Inspector');
+  if (scale === 1.25) await page.screenshot({ path: path.join(output, `inspector-context-label-${theme}.png`) });
+  await show('summary', { type: 'reasoning', summary: [{ text: '公开的推理摘要' }] }, '**公开的推理摘要**');
+  assert.equal(await page.locator('#inspector-title').textContent(), '思考摘要');
+  assert.equal(await page.locator('.event-row[data-event="7"] .event-kind').textContent(), '思考');
+  assert.ok((await page.locator('.event-row[data-event="7"] .event-kind').getAttribute('title')).includes('公开'));
+  assert.equal(await page.locator('[data-section="message"] strong').textContent(), '公开的推理摘要');
+  await show('lifecycle', { type: 'task_started' }, '回合开始');
+  assert.equal(await page.locator('#inspector-title').textContent(), '本轮已开始');
+  assert.equal(await page.locator('.detail-lead').count(), 0, 'turn start no longer adds the explanatory banner');
   const argv = ['C:\\Program Files\\WindowsApps\\OpenAI.CodexPrimaryRuntime\\pwsh.exe', '-NoProfile', '-Command', 'node scripts/test-tray-ui.cjs'];
   await show('tool', { type: 'item_completed', item: { type: 'CommandExecution', command: argv, status: 'completed', exit_code: 0, duration_ms: 107582,
     aggregated_output: 'PASS: 36 sidebar UI scenarios (6 quota states × 2 themes × 3 DPI scales)\nScreenshots: D:\\Code\\PROJECTS\\Wisland\\target\\tray-ui-qa' } }, 'raw command');

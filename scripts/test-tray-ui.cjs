@@ -52,7 +52,7 @@ async function main() {
           events: Array.from({ length: 72 }, (_, i) => ({
             id: String(i), turnId: i < 36 ? 't1' : 't2', turnNumber: i < 36 ? 1 : 2,
             modelCall: i % 12 === 11 ? { responseId: `resp-${i}`, number: Math.floor(i / 12) + 1 } : null,
-            kind: i % 12 === 11 ? 'model' : ['assistant', 'tool', 'result'][i % 3],
+            kind: i === 0 ? 'context' : i % 12 === 11 ? 'model' : ['assistant', 'tool', 'result'][i % 3],
             summary: i % 12 === 11 ? `调用 #${Math.floor(i / 12) + 1} 已完成` : ['分析已有代码及执行计划', 'exec_command · npm run test', '12 tests passed'][i % 3],
             timestamp: '2026-11-09T01:00:00Z', sourceType: 'response_item.function_call', callId: `call-${Math.floor(i / 3)}`, status: null,
           })),
@@ -316,7 +316,8 @@ async function main() {
       await page.evaluate(() => window.qaEmit('tray-appearance', { acrylic: false, dark: false, motion: false }));
       assert.equal(await page.locator('#details').evaluate(el => el.getAnimations().length), 0, 'disabled motion must not introduce a web animation');
       assert.notEqual(await page.locator('#details').evaluate(el => getComputedStyle(el).backgroundColor), 'rgba(0, 0, 0, 0)', 'opaque fallback must remain readable');
-      assert.ok(await page.locator('.event-kind').evaluateAll(labels => labels.every(label => [...label.textContent].length === 2)), 'each type label remains two characters');
+      assert.equal(await page.locator('.event-kind').first().textContent(), '上下文');
+      assert.ok(await page.locator('.event-kind').evaluateAll(labels => labels.every(label => [...label.textContent].length <= 3 && label.scrollWidth <= label.clientWidth)), 'two/three-character type labels fit without clipping');
       await page.emulateMedia({ reducedMotion: 'reduce' });
       await page.locator('.event-row').first().dispatchEvent('click');
       await page.waitForFunction(() => document.getElementById('inspector').dataset.phase === 'open');

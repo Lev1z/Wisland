@@ -187,7 +187,7 @@ export function overviewFor(detail: EventDetail): DetailOverview {
   const model: DetailOverview = {
     title: event.kind === "tool" ? toolName(detail) : event.kind === "result" ? "执行结果"
       : event.kind === "model" ? `模型调用${event.modelCall ? ` #${event.modelCall.number}` : ""}`
-      : ({ user: "用户消息", assistant: "助手消息", summary: "公开摘要", error: "异常记录", compaction: "上下文压缩", lifecycle: "回合记录" }[event.kind] ?? "事件记录"),
+      : ({ user: "用户消息", assistant: "助手消息", summary: "思考摘要", context: "上下文记录", record: "其他记录", system: "系统消息", error: "异常记录", compaction: "上下文压缩", lifecycle: "回合记录" }[event.kind] ?? "事件记录"),
     facts: factsFor(detail, ["tool", "result"].includes(event.kind) ? [resultObject] : []), blocks: [],
     technical: Object.fromEntries(Object.entries({ source: event.sourceType, timestamp: event.timestamp,
       turn_id: event.turnId === "unattributed" ? undefined : event.turnId, response_id: event.modelCall?.responseId,
@@ -293,8 +293,8 @@ export function overviewFor(detail: EventDetail): DetailOverview {
     }
     if (typeof p.last_agent_message === "string" && p.last_agent_message.trim()) {
       block("final-message", "最终回复", p.last_agent_message, { format: "markdown", text: p.last_agent_message });
-    } else {
-      model.lead = { text: started ? "这是本轮开始时的记录，不代表当前仍在执行" : "这条记录未附带最终回复", tone: failed || aborted ? "error" : undefined };
+    } else if (!started) {
+      model.lead = { text: "这条记录未附带最终回复", tone: failed || aborted ? "error" : undefined };
     }
     block("reason", "中断原因", p.reason, { error: aborted });
     const consumed = ["type", "status", "duration_ms", "duration", "wall_time_seconds", "time_to_first_token_ms", "last_agent_message", "reason", "error", "turn_id", "root_turn_id", "started_at", "completed_at"];
@@ -302,7 +302,7 @@ export function overviewFor(detail: EventDetail): DetailOverview {
     if (Object.keys(other).length) block("lifecycle-extra", "其他记录字段", other, { secondary: true });
     for (const key of ["root_turn_id", "time_to_first_token_ms"]) if (present(p[key])) model.technical[key] = p[key];
   } else if (["user", "assistant", "summary", "system"].includes(event.kind)) {
-    block("message", event.kind === "summary" ? "公开摘要" : "正文", data.content, { format: "markdown", text: data.content });
+    block("message", event.kind === "summary" ? "思考摘要" : "正文", data.content, { format: "markdown", text: data.content });
   } else if (event.kind === "error") {
     if (data.content && data.content !== printable(p.error)) block("message", "异常说明", data.content, { error: true });
   } else {

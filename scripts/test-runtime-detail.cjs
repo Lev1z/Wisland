@@ -104,7 +104,7 @@ test('model facts use recorded usage and mirror fallback, never inferred timings
   assert.ok(model.blocks[0].text.includes('extra_tokens'));
 });
 test('unknown records fall back to payload, errors remain visible', () => {
-  assert.ok(overviewFor(entry('context', { type: 'future_event', extra: 7 })).blocks[0].text.includes('extra'));
+  assert.ok(overviewFor(entry('record', { type: 'future_event', extra: 7 })).blocks[0].text.includes('extra'));
   const model = overviewFor(entry('error', { error: { message: 'failed' } }, 'failed to run'));
   assert.ok(model.blocks.every(b => b.error));
 });
@@ -223,6 +223,9 @@ test('turn completion promotes final Markdown and turn-scoped timing', () => {
 });
 test('turn start, interruption, errors, zero timing and missing reply have explicit templates', () => {
   assert.equal(overviewFor(entry('lifecycle', { type: 'turn_started' })).title, '本轮已开始');
+  for (const type of ['task_started', 'turn_started']) {
+    assert.equal(overviewFor(entry('lifecycle', { type })).lead, undefined, 'turn start has no explanatory banner or missing-final-reply prompt');
+  }
   const abort = overviewFor(entry('lifecycle', { type: 'turn_aborted', reason: 'user cancelled' }));
   assert.equal(abort.title, '本轮已中断');
   assert.equal(abort.blocks[0].text, 'user cancelled');
@@ -247,5 +250,16 @@ test('report badges quote explicit runner statements and preserve unsupported co
   const noError = overviewFor(entry('tool', { command: 'test', error: false, exit_code: 0, output: 'ok' }));
   assert.equal(noError.lead.tone, 'success');
   assert.ok(!noError.blocks.some(b => b.error));
+});
+test('thinking summaries, context and unclassified records have distinct readable titles', () => {
+  const thought = overviewFor(entry('summary', { type: 'reasoning' }, '**公开的推理摘要**'));
+  assert.equal(thought.title, '思考摘要');
+  assert.equal(thought.blocks[0].title, '思考摘要');
+  assert.equal(thought.blocks[0].text, '**公开的推理摘要**');
+  assert.equal(thought.blocks[0].format, 'markdown');
+  const context = overviewFor(entry('context', { type: 'additional_tools', tools: [] }));
+  assert.equal(context.title, '上下文记录');
+  assert.ok(context.blocks[0].text.includes('additional_tools'));
+  assert.equal(overviewFor(entry('record', { type: 'future_event' })).title, '其他记录');
 });
 console.log(`PASS: ${tests} Inspector presentation-model tests`);

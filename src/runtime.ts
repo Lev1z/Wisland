@@ -14,8 +14,13 @@ const list = el("trajectory-list");
 const inspector = el("inspector");
 let sessionPicker: SessionPicker;
 const kinds: Record<string, string> = {
-  user: "用户", assistant: "助手", summary: "摘要", tool: "工具", result: "结果",
-  compaction: "压缩", lifecycle: "回合", error: "异常", context: "背景", system: "系统", model: "模型",
+  user: "用户", assistant: "助手", summary: "思考", tool: "工具", result: "结果",
+  compaction: "压缩", lifecycle: "回合", error: "异常", context: "上下文", system: "系统", model: "模型", record: "记录",
+};
+const kindHints: Record<string, string> = {
+  summary: "思考摘要：日志公开提供的推理摘要",
+  context: "上下文：环境、工具或配置相关记录",
+  record: "其他记录：尚未专门分类的日志事件",
 };
 const statuses: Record<string, string> = { started: "已开始", completed: "Completed", aborted: "Interrupted", failed: "Failed" };
 let state: Snapshot | null = null;
@@ -143,7 +148,9 @@ function renderList(): void {
         marker.setAttribute("aria-label", marker.title);
         gutter.append(marker);
       } else { delete row.dataset.modelCall; }
-      row.replaceChildren(gutter, node("i", "event-color"), node("span", "event-kind", kinds[event.kind] ?? "记录"), node("span", "event-summary", event.summary || "（空内容）"));
+      const kind = node("span", "event-kind", kinds[event.kind] ?? "记录");
+      if (kindHints[event.kind]) kind.title = kindHints[event.kind];
+      row.replaceChildren(gutter, node("i", "event-color"), kind, node("span", "event-summary", event.summary || "（空内容）"));
       row.dataset.renderKey = renderKey;
     }
     rows.push(row);

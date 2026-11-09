@@ -263,7 +263,7 @@ impl Projection {
                 ("event_msg", "agent_message") => ("assistant", text_content(&p["message"])),
                 ("event_msg", "agent_reasoning") => ("summary", text_content(&p["text"])),
                 ("response_item", "message") => {
-                    let role = p["role"].as_str().unwrap_or("context");
+                    let role = p["role"].as_str().unwrap_or("");
                     (
                         if role == "user" {
                             "user"
@@ -271,8 +271,10 @@ impl Projection {
                             "assistant"
                         } else if role == "system" || role == "developer" {
                             "system"
-                        } else {
+                        } else if role == "context" {
                             "context"
+                        } else {
+                            "record"
                         },
                         text_content(&p["content"]),
                     )
@@ -317,7 +319,11 @@ impl Projection {
                     | "ContextCompaction",
                 ) => ("compaction", "Context compaction".into()),
                 ("event_msg", "error" | "warning") => ("error", text_content(&p["message"])),
-                _ => ("context", subtype.to_string()),
+                // Keep known context state separate from unclassified bookkeeping.
+                ("world_state", _) => ("context", "上下文环境更新".into()),
+                ("response_item", "additional_tools") => ("context", "上下文工具更新".into()),
+                ("response_item", "configuration_update") => ("context", "上下文配置更新".into()),
+                _ => ("record", subtype.to_string()),
             }
         };
         // Some Codex versions persist both event_msg and response_item for one message.
@@ -976,7 +982,27 @@ mod tests {
         assert_eq!(p.turn_status["t1"], "completed");
         assert!(p.events[1].status.is_none()); // An output is not proof of success.
         feed(&mut p, 5, "future_item", json!({"foo":1}));
-        assert_eq!(p.events.back().unwrap().kind, "context");
+        assert_eq!(p.events.back().unwrap().kind, "record");
+    }
+    #[test]
+    fn explicit_context_is_separate_from_unclassified_records() {
+        let mut p = Projection::default();
+        feed(&mut p, 0, "world_state", json!({"full":true,"state":{"cwd":"D:/code"}}));
+        feed(&mut p, 1, "response_item", json!({"type":"additional_tools","role":"developer","tools":[]}));
+        feed(&mut p, 2, "response_item", json!({"type":"configuration_update","reasoning":{}}));
+        assert!(p.events.iter().all(|event| event.kind == "context"));
+        assert_eq!(p.events[0].detail["raw"]["payload"]["state"]["cwd"], "D:/code");
+        assert_eq!(p.events[1].summary, "上下文工具更新");
+        for (index, (role, kind)) in [
+            ("user", "user"), ("assistant", "assistant"), ("developer", "system"),
+            ("system", "system"), ("context", "context"), ("future_role", "record"), ("", "record"),
+        ].iter().enumerate() {
+            feed(&mut p, index as u64 + 3, "response_item", json!({"type":"message","role":role,"content":[{"text":"world_state context user words"}]}));
+            assert_eq!(&p.events.back().unwrap().kind, kind);
+        }
+        feed(&mut p, 20, "event_msg", json!({"type":"session_settings_applied","extra":42}));
+        assert_eq!(p.events.back().unwrap().kind, "record");
+        assert_eq!(p.events.back().unwrap().detail["raw"]["payload"]["extra"], 42);
     }
     #[test]
     fn model_calls_require_explicit_completion_ids_and_deduplicate_mirrors() {
