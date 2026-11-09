@@ -77,6 +77,8 @@ Windows 无标题栏窗口仍有非客户区边距。Tauri `set_size` 接收客�
 
 ## 验证
 
+Rollout Trace 已完成隔离能力验证，尚未接入产品读取链路；实测版本、schema 差异、复现脚本及启用边界见 [Rollout Trace 验证记录](rollout-trace-verification.md)。
+
 ```powershell
 npm run build
 npm run test:version
