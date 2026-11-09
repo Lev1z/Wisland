@@ -183,6 +183,17 @@ function factsFor(entry: Entry, extra: ObjectValue[] = []): Fact[] {
   return facts;
 }
 
+// Only unwrap known text blocks. Mixed/unknown structures remain available as
+// folded data, rather than silently dropping attachments or new fields.
+function prose(value: unknown): string | undefined {
+  if (typeof value === "string") return value.trim() ? value : undefined;
+  if (Array.isArray(value) && value.length && value.every(v => typeof object(v).text === "string"
+    && ["text", "input_text", "output_text"].includes(String(object(v).type))
+    && Object.keys(object(v)).every(k => ["type", "text"].includes(k)))) {
+    return value.map(v => object(v).text).join("\n\n");
+  }
+}
+
 export function overviewFor(detail: EventDetail): DetailOverview {
   const { event, detail: data } = detail;
   const p = payload(data.raw);
@@ -324,6 +335,57 @@ export function overviewFor(detail: EventDetail): DetailOverview {
     const other = Object.fromEntries(Object.entries(p).filter(([key]) => !consumed.includes(key)));
     if (Object.keys(other).length) block("lifecycle-extra", "其他记录字段", other, { secondary: true });
     for (const key of ["root_turn_id", "time_to_first_token_ms"]) if (present(p[key])) model.technical[key] = p[key];
+  } else if (event.kind === "context") {
+    const markdown = (id: string, title: string, value: unknown): boolean => {
+      const text = prose(value);
+      if (text === undefined) return false;
+      block(id, title, text, { format: "markdown", text }); return true;
+    };
+    const rest = { ...p };
+    delete rest.type;
+    if (event.sourceType.startsWith("world_state.")) {
+      model.title = "上下文 · 环境与规则";
+      model.facts.push({ label: "记录范围", value: p.full === true ? "完整状态快照" : p.full === false ? "增量更新（仅本条）" : "未标明完整或增量" });
+      delete rest.full;
+      const state = { ...object(p.state) };
+      const rules = object(state.agents_md);
+      if (markdown("context-rules", "项目规则", rules.text)) {
+        const extra = { ...rules }; delete extra.text;
+        if (Object.keys(extra).length) state.agents_md = extra; else delete state.agents_md;
+      }
+      const labels: Record<string, string> = { cwd: "工作目录", shell: "Shell", platform: "平台", os: "操作系统", model: "模型", model_slug: "模型", timezone: "时区", current_date: "日期" };
+      for (const [key, label] of Object.entries(labels)) {
+        if (["string", "number", "boolean"].includes(typeof state[key])) {
+          model.facts.push({ label, value: printable(state[key]) }); delete state[key];
+        }
+      }
+      if (Object.keys(state).length) block("context-state", "其他上下文字段", state, { secondary: true });
+      if (p.state !== undefined && !Array.isArray(p.state) && p.state !== null && typeof p.state === "object") delete rest.state;
+    } else if (p.type === "message") {
+      model.title = "上下文 · 消息";
+      if (markdown("context-message", "正文", p.content)) delete rest.content;
+      if (typeof p.role === "string") { model.technical.role = p.role; delete rest.role; }
+    } else if (p.type === "additional_tools") {
+      model.title = "上下文 · 工具更新";
+      if (Array.isArray(p.tools)) {
+        model.facts.push({ label: "本条工具条目", value: String(p.tools.length) });
+        const names = p.tools.map(t => object(t).name ?? object(object(t).function).name);
+        if (names.every(n => typeof n === "string" && n.length > 0)) block("context-tools", "工具名称", names.join("\n"));
+      }
+    } else if (p.type === "configuration_update") {
+      model.title = "上下文 · 配置更新";
+      for (const [key, label] of [["model", "模型"], ["model_slug", "模型"], ["reasoning_effort", "推理强度"]]) {
+        if (typeof p[key] === "string") { model.facts.push({ label, value: p[key] }); delete rest[key]; }
+      }
+      const reasoning = object(p.reasoning);
+      if (typeof reasoning.effort === "string") {
+        model.facts.push({ label: "推理强度", value: reasoning.effort });
+        const extra = { ...reasoning }; delete extra.effort;
+        if (Object.keys(extra).length) rest.reasoning = extra; else delete rest.reasoning;
+      }
+    }
+    if (Object.keys(rest).length) block("context-extra", "其他记录字段", rest, { secondary: true });
+    if (!model.blocks.some(b => !b.secondary) && model.facts.length === 0) model.lead = { text: "本条未附带可直接阅读的上下文正文，已保留字段见下方。" };
   } else if (["user", "assistant", "summary", "system"].includes(event.kind)) {
     block("message", event.kind === "summary" ? "思考摘要" : "正文", data.content, { format: "markdown", text: data.content });
   } else if (event.kind === "error") {

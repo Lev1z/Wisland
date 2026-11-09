@@ -282,8 +282,33 @@ test('thinking summaries, context and unclassified records have distinct readabl
   assert.equal(thought.blocks[0].text, '**公开的推理摘要**');
   assert.equal(thought.blocks[0].format, 'markdown');
   const context = overviewFor(entry('context', { type: 'additional_tools', tools: [] }));
-  assert.equal(context.title, '上下文记录');
-  assert.ok(context.blocks[0].text.includes('additional_tools'));
+  assert.equal(context.title, '上下文 · 工具更新');
+  assert.ok(context.facts.some(f => f.value === '0'));
   assert.equal(overviewFor(entry('record', { type: 'future_event' })).title, '其他记录');
+});
+test('context snapshots render rule prose without mutating raw records', () => {
+  const detail = entry('context', { full: false, state: { agents_md: { text: '# Rules\n\n- Keep C:\\new literal', source: 'AGENTS.md' }, cwd: 'D:\\code', unknown: false } }, '', { sourceType: 'world_state.world_state' });
+  const original = JSON.stringify(detail);
+  const model = overviewFor(detail);
+  assert.equal(model.blocks[0].format, 'markdown');
+  assert.equal(model.blocks[0].text, detail.detail.raw.payload.state.agents_md.text);
+  assert.ok(model.facts.some(f => f.value === '增量更新（仅本条）'));
+  assert.ok(model.blocks.find(b => b.secondary).text.includes('AGENTS.md'));
+  assert.ok(model.blocks.find(b => b.secondary).text.includes('false'));
+  assert.equal(JSON.stringify(detail), original);
+  const full = overviewFor(entry('context', { full: true, state: {} }, '', { sourceType: 'world_state.' }));
+  assert.ok(full.facts.some(f => f.value === '完整状态快照'));
+});
+test('context mixed content and unknown fields remain inspectable', () => {
+  const mixed = overviewFor(entry('context', { type: 'message', role: 'context', content: [{ type: 'input_text', text: 'hello' }, { type: 'image', image_url: 'omitted' }] }));
+  assert.equal(mixed.blocks[0].secondary, true);
+  assert.ok(mixed.blocks[0].text.includes('image'));
+  const plain = overviewFor(entry('context', { type: 'message', role: 'context', content: [{ type: 'input_text', text: '## Context\nbody' }] }));
+  assert.equal(plain.blocks[0].format, 'markdown');
+  const config = overviewFor(entry('context', { type: 'configuration_update', reasoning: { effort: 'high', future: 0 } }));
+  assert.ok(config.facts.some(f => f.value === 'high'));
+  assert.ok(config.blocks[0].text.includes('future'));
+  const malformed = overviewFor(entry('context', { full: false, state: 'truncated' }, '', { sourceType: 'world_state.' }));
+  assert.ok(malformed.blocks.some(b => b.text.includes('truncated')));
 });
 console.log(`PASS: ${tests} Inspector presentation-model tests`);
