@@ -313,6 +313,28 @@ pub async fn set_tray_expanded(app: tauri::AppHandle, expanded: bool) -> Result<
     request_transition(&app, expanded)
 }
 
+#[tauri::command]
+pub async fn toggle_tray_expanded(app: tauri::AppHandle) -> Result<(), String> {
+    toggle_details(&app)
+}
+
+fn toggle_details(app: &tauri::AppHandle) -> Result<(), String> {
+    let handle = app.clone();
+    app.run_on_main_thread(move || {
+        if !active(&handle) {
+            return;
+        }
+        // Read the target on the owning UI thread, immediately before starting
+        // the transition. WS_VISIBLE stays true while closing or cloaked, and
+        // focus changes when the tray is clicked, so neither is a toggle state.
+        let open = !handle.state::<TrayState>().expanded.load(Ordering::SeqCst);
+        if let Err(error) = request_transition(&handle, open) {
+            report_error(&handle, error);
+        }
+    })
+    .map_err(|error| error.to_string())
+}
+
 fn request_transition(app: &tauri::AppHandle, open: bool) -> Result<(), String> {
     if open && !active(app) {
         return Ok(());
@@ -679,6 +701,14 @@ fn build_tray_menu(
         .build()
 }
 
+fn is_tray_left_release(event: &TrayIconEvent) -> bool {
+    matches!(event, TrayIconEvent::Click {
+        button: MouseButton::Left,
+        button_state: MouseButtonState::Up,
+        ..
+    })
+}
+
 pub fn setup(app: &tauri::AppHandle) -> tauri::Result<()> {
     app.manage(TrayState::default());
     let menu = build_tray_menu(app, get_display_mode(app.clone()))?;
@@ -703,20 +733,12 @@ pub fn setup(app: &tauri::AppHandle) -> tauri::Result<()> {
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
-            if let TrayIconEvent::Click {
-                button: MouseButton::Left,
-                button_state: MouseButtonState::Up,
-                ..
-            } = event
-            {
+            if is_tray_left_release(&event) {
                 let app = tray.app_handle();
                 if active(app) {
-                    let handle = app.clone();
-                    tauri::async_runtime::spawn(async move {
-                        if let Err(e) = set_tray_expanded(handle.clone(), true).await {
-                            report_error(&handle, e);
-                        }
-                    });
+                    if let Err(error) = toggle_details(app) {
+                        report_error(app, error);
+                    }
                 } else if let Some(window) = app.get_webview_window("main") {
                     let _ = window.show();
                 }
@@ -828,6 +850,29 @@ pub fn setup(app: &tauri::AppHandle) -> tauri::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tray_toggle_only_uses_left_release_not_down_or_double_click() {
+        let position = tauri::PhysicalPosition::new(12.0, 24.0);
+        let rect = tauri::Rect {
+            position: tauri::PhysicalPosition::new(0, 0).into(),
+            size: tauri::PhysicalSize::new(24, 24).into(),
+        };
+        for (button, button_state, expected) in [
+            (MouseButton::Left, MouseButtonState::Up, true),
+            (MouseButton::Left, MouseButtonState::Down, false),
+            (MouseButton::Right, MouseButtonState::Up, false),
+            (MouseButton::Middle, MouseButtonState::Up, false),
+        ] {
+            let event = TrayIconEvent::Click {
+                id: "wisland".into(), position, rect, button, button_state,
+            };
+            assert_eq!(is_tray_left_release(&event), expected);
+        }
+        assert!(!is_tray_left_release(&TrayIconEvent::DoubleClick {
+            id: "wisland".into(), position, rect, button: MouseButton::Left,
+        }));
+    }
 
     #[test]
     fn startup_mode_defaults_and_validates() {

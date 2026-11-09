@@ -90,6 +90,39 @@ exports.checkInspector = async function checkInspector(page, { theme, scale, out
   assert.equal((await page.locator('#inspector-content').textContent()).split('Assertion failed').length - 1, 1);
   assert.equal(await page.locator('.detail-facts [data-tone="error"]').textContent(), '1');
   assert.equal(await page.locator('details[data-section$="command"]').getAttribute('open'), null);
+  // Secondary details have ONE disclosure, even when their contents exceed
+  // the primary overview's 240px preview. Exercise both tool input shapes.
+  for (const command of [true, false]) {
+    const input = '关联工具完整内容\n'.repeat(90) + 'RELATED_END';
+    const payload = command ? { name: 'exec_command', arguments: JSON.stringify({ cmd: input }) } : { name: 'apply_patch', input };
+    await show('result', { output: 'done' }, 'done', {
+      event: { callId: 'metadata-'.repeat(100) },
+      related: [{ event: { ...related[0].event, kind: 'tool' }, detail: { byteOffset: 1, raw: { payload }, content: input } }],
+    });
+    const linked = page.locator(`details[data-section$="${command ? 'command' : 'input'}"]`);
+    const technical = page.locator('[data-section="technical"]');
+    for (const disclosure of [linked, technical]) {
+      assert.equal(await disclosure.getAttribute('open'), null, 'secondary details start folded');
+      assert.equal(await disclosure.locator('.detail-expand').count(), 0, 'no nested expand-all control');
+      await disclosure.locator('summary').click();
+      assert.ok(await disclosure.locator('.detail-preview').evaluate(e => e.clientHeight > 240 && e.scrollHeight <= e.clientHeight + 1 && getComputedStyle(e).maxHeight === 'none'), 'one click reveals all retained content');
+    }
+    await linked.locator('summary').focus();
+    await page.evaluate(() => {
+      window.qaDetailOverride.detail.raw.payload.status = 'completed';
+      window.qaRuntime.revision++; window.qaEmit('runtime-snapshot', structuredClone(window.qaRuntime));
+    });
+    await page.waitForFunction(() => document.querySelector('#inspector-content > .detail-facts')?.textContent.includes('已完成'));
+    assert.notEqual(await linked.getAttribute('open'), null, 'live refresh preserves the outer disclosure');
+    assert.notEqual(await technical.getAttribute('open'), null);
+    assert.ok(await linked.locator('summary').evaluate(e => e === document.activeElement), 'refresh preserves disclosure keyboard focus');
+    await page.keyboard.press('Enter');
+    assert.equal(await linked.getAttribute('open'), null, 'summary remains the one close control');
+    await page.keyboard.press('Enter');
+    assert.ok(await linked.locator('.detail-preview').evaluate(e => e.scrollHeight <= e.clientHeight + 1), 'reopening remains fully expanded');
+    await linked.locator('.detail-action').click();
+    assert.equal(await page.evaluate(() => window.qaCopied), input, 'copy still includes all retained content');
+  }
   await show('tool', { name: 'apply_patch', input: '*** Begin Patch\n+const p = "C:\\new";\n*** End Patch' }, 'duplicate');
   assert.ok((await page.locator('[data-section="input"] pre').textContent()).includes('C:\\new'));
   await show('tool', { name: 'broken_json', arguments: '{"cmd":"unfinished… [已截断]' }, 'duplicate');

@@ -44,6 +44,7 @@ export function renderDetailContent(container: HTMLElement, detail: EventDetail,
     if (block.error) outer.dataset.tone = "error";
     if (outer instanceof HTMLDetailsElement) outer.open = opened.has(block.id);
     const heading = node(block.secondary ? "summary" : "div", "detail-section-heading");
+    if (block.secondary) heading.dataset.detailFocus = `${block.id}-summary`;
     heading.append(node("span", "detail-section-title", block.title));
     const copy = action("复制", `复制${block.title}`, () => {
       // Clipboard writes require an explicit click; failures stay in the UI.
@@ -66,6 +67,13 @@ export function renderDetailContent(container: HTMLElement, detail: EventDetail,
         }));
       } catch { body.append(node("pre", "", block.text)); }
     } else { body.append(node("pre", "", block.text)); }
+    // The outer disclosure is the only fold for secondary information. Once
+    // opened, show all retained content; do not ask for a second expansion.
+    if (block.secondary) {
+      outer.dataset.expanded = "true";
+      outer.append(body);
+      return outer;
+    }
     // Raw records start fully open, including a mirror arriving on a later
     // snapshot. Preserve an explicit collapse while the same tab is updating.
     outer.dataset.expanded = String(expanded.get(block.id) ?? raw);

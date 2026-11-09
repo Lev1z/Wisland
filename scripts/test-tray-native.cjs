@@ -267,6 +267,31 @@ async function main() {
     await pause(350);
     assert.equal(await visible(), true, 'an unfocused sidebar must remain visible');
     console.log(`PASS: unfocused sidebar stays visible (${initiallyFocused ? 'focus transition observed' : 'Windows kept the test process in the background'})`);
+    // This command and the left-button release callback share toggle_details.
+    // Do not use focus or WS_VISIBLE as the state during cloak/exit animation.
+    await invoke('toggle_tray_expanded');
+    await until(async () => !(await visible()), 'tray toggle closes an unfocused sidebar');
+    await invoke('toggle_tray_expanded');
+    await pause(550);
+    assert.equal(await visible(), true, 'next tray toggle reopens the sidebar');
+    assertRest(await sample(), rest, 'toggle keeps the same resting geometry');
+    await Promise.all([invoke('toggle_tray_expanded'), invoke('toggle_tray_expanded')]);
+    await pause(550);
+    assert.equal(await visible(), true, 'two rapid toggles preserve the open target');
+    await invoke('toggle_tray_expanded');
+    await until(async () => !(await visible()), 'toggle closes before warmup cancellation test');
+    await Promise.all([invoke('toggle_tray_expanded'), invoke('toggle_tray_expanded')]);
+    await pause(550);
+    assert.equal(await visible(), false, 'two rapid toggles cancel a cloaked/starting entrance');
+    await invoke('toggle_tray_expanded');
+    await pause(550);
+    await invoke('toggle_tray_expanded');
+    await pause(40);
+    await invoke('toggle_tray_expanded');
+    await pause(550);
+    assert.equal(await visible(), true, 'toggle reverses an in-flight exit using its target state');
+    assertRest(await sample(), rest, 'reversed tray toggle restores exact position');
+    console.log('PASS: tray toggle open / unfocused close / rapid parity / warmup cancellation / exit reversal');
     const settingsClosed = settingsPage.waitForEvent('close');
     await settingsPage.evaluate(() => window.__TAURI__.window.getCurrentWindow().close()).catch(error => {
       // Closing the native WebView can destroy the IPC reply context first.
@@ -275,7 +300,7 @@ async function main() {
     await settingsClosed;
     await invoke('set_tray_expanded', { expanded: true });
     await pause(300);
-    assertRest(await sample(), rest, 'clicking an open popup must not replay or drift its position');
+    assertRest(await sample(), rest, 'an explicit show request remains idempotent');
     // Queue close/reopen without waiting for the previous animation.
     await Promise.all([
       invoke('set_tray_expanded', { expanded: true }),
@@ -299,6 +324,9 @@ async function main() {
     await until(async () => !(await visible()), 'restore capsule');
     await pause(350);
     assert.equal(await visible(), false, 'a stale animation must not undo restoring capsule mode');
+    await invoke('toggle_tray_expanded');
+    await pause(350);
+    assert.equal(await visible(), false, 'sidebar toggle does not change capsule mode');
     assert.equal(popup.isClosed(), false, 'dismissal must hide, not destroy, the initialized WebView');
     assert.equal(pages().filter(page => page.url().endsWith('/tray.html')).length, 1, 'reuse exactly one tray WebView across every transition');
     console.log('PASS: native slide direction / stable borderless frame / repeated open / rapid reopen / restore capsule');

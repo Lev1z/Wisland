@@ -66,6 +66,7 @@ pub fn run() {
             tray_mode::get_display_mode, tray_mode::set_display_mode,
             tray_mode::set_startup_mode, tray_mode::get_tray_snapshot,
             tray_mode::set_tray_expanded, tray_mode::refresh_tray_quota,
+            tray_mode::toggle_tray_expanded,
             tray_mode::get_tray_appearance,
             tray_mode::get_tray_geometry,
             runtime::get_runtime_snapshot, runtime::select_runtime_session, runtime::get_runtime_event,
