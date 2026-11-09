@@ -20,6 +20,8 @@ const DETAIL_CHARS: usize = 32 * 1024;
 #[path = "runtime_catalog.rs"]
 mod catalog;
 use catalog::{Segment, Session};
+#[path = "runtime_model.rs"]
+mod model;
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -34,6 +36,12 @@ pub struct RuntimeEvent {
     source_type: String,
     call_id: Option<String>,
     status: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    model_presentation: Option<model::ModelPresentation>,
+    #[serde(skip)]
+    continuity: u64,
+    #[serde(skip)]
+    input_boundary: bool,
     #[serde(skip)]
     detail: Value,
 }
@@ -73,6 +81,9 @@ struct Projection {
     messages: VecDeque<(String, String, String, String, String)>,
     skipped: usize,
     dropped: usize,
+    continuity: u64,
+    model_view: model::ModelView,
+    input_boundary: bool,
 }
 
 fn string(value: &Value, key: &str) -> Option<String> {
@@ -147,6 +158,8 @@ impl Projection {
         };
         let Ok(line) = serde_json::from_slice::<Value>(bytes) else {
             self.skipped += 1;
+            self.continuity += 1;
+            self.input_boundary = false;
             return;
         };
         let outer = line["type"].as_str().unwrap_or("unknown");
@@ -159,21 +172,32 @@ impl Projection {
         };
         let subtype = p["type"].as_str().unwrap_or(outer);
         if outer == "session_meta" {
+            self.continuity += 1;
+            self.input_boundary = false;
             return;
         }
-        if let Some(id) =
-            string(envelope, "turn_id").or_else(|| string(&line["metadata"], "turn_id"))
-        {
-            if id != self.turn {
-                self.turn = id;
+        let explicit_turn =
+            string(envelope, "turn_id").or_else(|| string(&line["metadata"], "turn_id"));
+        // A late tool result or usage record may name an older turn. It must
+        // not redirect subsequent records that rely on the active turn.
+        if let Some(id) = &explicit_turn {
+            if self.turn.is_empty()
+                || outer == "turn_context"
+                || matches!(subtype, "task_started" | "turn_started")
+            {
+                self.turn = id.clone();
             }
         }
         if self.turn.is_empty() {
             self.turn = "unattributed".into();
         }
         if outer == "turn_context" {
+            self.continuity += 1;
+            self.input_boundary = true;
             return;
         }
+        let has_explicit_turn = explicit_turn.is_some();
+        let record_turn = explicit_turn.unwrap_or_else(|| self.turn.clone());
         // Per-token legacy mirrors and quota bookkeeping are not trajectory rows.
         if subtype.ends_with("_delta")
             || matches!(subtype, "token_count" | "agent_reasoning_raw_content")
@@ -181,21 +205,30 @@ impl Projection {
             return;
         }
 
-        // These records describe one completed upstream response. Legacy
-        // token_count updates are accumulated/replayed and are NOT call boundaries.
+        // Usage is also persisted for incomplete responses. Only the explicit
+        // response-completed event proves completion; neither proves tool success.
         let model_call = if outer == "token_usage_record"
             || (outer == "event_msg" && subtype == "raw_response_completed")
         {
             if let Some(response_id) = string(p, "response_id").filter(|id| !id.is_empty()) {
-                let key = (self.turn.clone(), response_id.clone());
+                let key = (record_turn.clone(), response_id.clone());
                 if let Some(id) = self.model_calls.get(&key) {
                     if let Some(event) = self.events.iter_mut().find(|e| &e.id == id) {
-                        event.detail["mirror"] = bounded(&line, &mut DETAIL_CHARS.clone());
+                        if subtype == "raw_response_completed"
+                            || event.detail["mirror"]["payload"]["type"] != "raw_response_completed"
+                        {
+                            event.detail["mirror"] = bounded(&line, &mut DETAIL_CHARS.clone());
+                        }
+                        if subtype == "raw_response_completed" {
+                            event.status = Some("response_completed".into());
+                            event.summary = "响应已结束".into();
+                        }
                     }
                     return;
                 }
                 self.next_model_call += 1;
                 self.model_calls.insert(key, event_id.clone());
+                self.messages.clear(); // Equal text in a later response is not a mirror.
                 Some(ModelCall {
                     response_id,
                     number: self.next_model_call,
@@ -207,8 +240,16 @@ impl Projection {
             None
         };
 
-        let (kind, content) = if let Some(call) = &model_call {
-            ("model", format!("调用 #{} 已完成", call.number))
+        let (kind, content) = if model_call.is_some() {
+            (
+                "model",
+                if subtype == "raw_response_completed" {
+                    "响应已结束"
+                } else {
+                    "已记录用量"
+                }
+                .into(),
+            )
         } else {
             match (outer, subtype) {
                 ("event_msg", "UserMessage") => ("user", text_content(&p["content"])),
@@ -240,12 +281,13 @@ impl Projection {
                 ),
                 ("event_msg", "FunctionCallOutput") => ("result", text_content(&p["output"])),
                 ("event_msg", "task_started" | "turn_started") => {
-                    self.turn_status.insert(self.turn.clone(), "started".into());
+                    self.turn_status
+                        .insert(record_turn.clone(), "started".into());
                     ("lifecycle", "回合开始".to_string())
                 }
                 ("event_msg", "task_complete" | "turn_complete") => {
                     self.turn_status.insert(
-                        self.turn.clone(),
+                        record_turn.clone(),
                         if p["error"].is_null() {
                             "completed"
                         } else {
@@ -256,7 +298,8 @@ impl Projection {
                     ("lifecycle", "回合结束".to_string())
                 }
                 ("event_msg", "turn_aborted") => {
-                    self.turn_status.insert(self.turn.clone(), "aborted".into());
+                    self.turn_status
+                        .insert(record_turn.clone(), "aborted".into());
                     ("lifecycle", "回合中断".to_string())
                 }
                 ("event_msg", "user_message") => ("user", text_content(&p["message"])),
@@ -332,6 +375,8 @@ impl Projection {
             use std::hash::{Hash, Hasher};
             let mut hash = std::collections::hash_map::DefaultHasher::new();
             content.hash(&mut hash);
+            self.continuity.hash(&mut hash);
+            (line["metadata"]["compaction_output"] == true).hash(&mut hash);
             let fingerprint = hash.finish().to_string();
             let source = if completed_item {
                 "item_completed"
@@ -342,7 +387,7 @@ impl Projection {
                 .messages
                 .iter()
                 .position(|(turn, k, previous, text, _)| {
-                    turn == &self.turn && k == kind && previous != source && text == &fingerprint
+                    turn == &record_turn && k == kind && previous != source && text == &fingerprint
                 })
             {
                 if let Some((_, _, _, _, id)) = self.messages.remove(index) {
@@ -364,7 +409,7 @@ impl Projection {
                 return;
             }
             self.messages.push_back((
-                self.turn.clone(),
+                record_turn.clone(),
                 kind.into(),
                 source.into(),
                 fingerprint,
@@ -375,12 +420,12 @@ impl Projection {
             }
         }
         let call_id = string(p, "call_id");
-        let mut turn_id = self.turn.clone();
+        let mut turn_id = record_turn;
         if kind == "tool" {
             if let Some(id) = &call_id {
                 self.calls.insert(id.clone(), turn_id.clone());
             }
-        } else if kind == "result" {
+        } else if kind == "result" && !has_explicit_turn {
             if let Some(turn) = call_id.as_ref().and_then(|id| self.calls.get(id)) {
                 turn_id = turn.clone();
             }
@@ -425,11 +470,21 @@ impl Projection {
             },
             call_id,
             status: if kind == "model" {
-                Some("completed".into())
+                Some(
+                    if subtype == "raw_response_completed" {
+                        "response_completed"
+                    } else {
+                        "usage_recorded"
+                    }
+                    .into(),
+                )
             } else {
                 string(p, "status")
             },
             detail,
+            model_presentation: None,
+            continuity: self.continuity,
+            input_boundary: std::mem::take(&mut self.input_boundary),
         });
         while self.events.len() > MAX_EVENTS {
             if let Some(event) = self.events.pop_front() {
@@ -536,6 +591,8 @@ impl Tail {
                         }
                     } else {
                         self.projection.skipped += 1;
+                        self.projection.continuity += 1;
+                        self.projection.input_boundary = false;
                     }
                 }
                 offset += line.len() as u64;
@@ -604,6 +661,8 @@ impl Tail {
                     self.pending.clear();
                     self.discarding = true;
                     self.projection.skipped += 1;
+                    self.projection.continuity += 1;
+                    self.projection.input_boundary = false;
                 }
             }
         }
@@ -749,8 +808,8 @@ impl Service {
         if changed {
             self.snapshot.events = self
                 .tail
-                .as_ref()
-                .map(|t| t.projection.events.iter().cloned().collect())
+                .as_mut()
+                .map(|t| t.projection.model_view.build(&t.projection.events))
                 .unwrap_or_default();
             self.snapshot.turn_status = self
                 .tail
@@ -762,9 +821,9 @@ impl Service {
                 Some(t) => format!(
                     "只读时间线 · 轮次为已加载记录编号{}{}{}{}{}",
                     if t.projection.events.iter().any(|e| e.model_call.is_some()) {
-                        " · 圆点标注已记录的模型完成调用"
+                        " · 模型标题前置，关联依据见详情"
                     } else {
-                        " · 此日志未记录模型调用边界"
+                        " · 未关联输出不计作模型请求"
                     },
                     if t.truncated {
                         " · 仅最近 4 MiB"
@@ -856,10 +915,14 @@ pub async fn get_runtime_event(
             .events
             .iter()
             .filter(|e| {
-                e.id != id
-                    && e.call_id.is_some()
-                    && e.call_id == event.call_id
-                    && e.turn_id == event.turn_id
+                if event.kind == "model" {
+                    e.id != id && e.detail["modelAssociation"]["headerId"] == id
+                } else {
+                    e.id != id
+                        && e.call_id.is_some()
+                        && e.call_id == event.call_id
+                        && e.turn_id == event.turn_id
+                }
             })
             .map(|e| json!({ "event": e, "detail": e.detail }))
             .collect();
@@ -987,22 +1050,61 @@ mod tests {
     #[test]
     fn explicit_context_is_separate_from_unclassified_records() {
         let mut p = Projection::default();
-        feed(&mut p, 0, "world_state", json!({"full":true,"state":{"cwd":"D:/code"}}));
-        feed(&mut p, 1, "response_item", json!({"type":"additional_tools","role":"developer","tools":[]}));
-        feed(&mut p, 2, "response_item", json!({"type":"configuration_update","reasoning":{}}));
+        feed(
+            &mut p,
+            0,
+            "world_state",
+            json!({"full":true,"state":{"cwd":"D:/code"}}),
+        );
+        feed(
+            &mut p,
+            1,
+            "response_item",
+            json!({"type":"additional_tools","role":"developer","tools":[]}),
+        );
+        feed(
+            &mut p,
+            2,
+            "response_item",
+            json!({"type":"configuration_update","reasoning":{}}),
+        );
         assert!(p.events.iter().all(|event| event.kind == "context"));
-        assert_eq!(p.events[0].detail["raw"]["payload"]["state"]["cwd"], "D:/code");
+        assert_eq!(
+            p.events[0].detail["raw"]["payload"]["state"]["cwd"],
+            "D:/code"
+        );
         assert_eq!(p.events[1].summary, "上下文工具更新");
         for (index, (role, kind)) in [
-            ("user", "user"), ("assistant", "assistant"), ("developer", "system"),
-            ("system", "system"), ("context", "context"), ("future_role", "record"), ("", "record"),
-        ].iter().enumerate() {
-            feed(&mut p, index as u64 + 3, "response_item", json!({"type":"message","role":role,"content":[{"text":"world_state context user words"}]}));
+            ("user", "user"),
+            ("assistant", "assistant"),
+            ("developer", "system"),
+            ("system", "system"),
+            ("context", "context"),
+            ("future_role", "record"),
+            ("", "record"),
+        ]
+        .iter()
+        .enumerate()
+        {
+            feed(
+                &mut p,
+                index as u64 + 3,
+                "response_item",
+                json!({"type":"message","role":role,"content":[{"text":"world_state context user words"}]}),
+            );
             assert_eq!(&p.events.back().unwrap().kind, kind);
         }
-        feed(&mut p, 20, "event_msg", json!({"type":"session_settings_applied","extra":42}));
+        feed(
+            &mut p,
+            20,
+            "event_msg",
+            json!({"type":"session_settings_applied","extra":42}),
+        );
         assert_eq!(p.events.back().unwrap().kind, "record");
-        assert_eq!(p.events.back().unwrap().detail["raw"]["payload"]["extra"], 42);
+        assert_eq!(
+            p.events.back().unwrap().detail["raw"]["payload"]["extra"],
+            42
+        );
     }
     #[test]
     fn model_calls_require_explicit_completion_ids_and_deduplicate_mirrors() {
@@ -1038,7 +1140,7 @@ mod tests {
             p.events[1].model_call.as_ref().unwrap().response_id,
             "resp-a"
         );
-        assert_eq!(p.events[1].status.as_deref(), Some("completed"));
+        assert_eq!(p.events[1].status.as_deref(), Some("response_completed"));
         assert!(!p.events[1].detail["mirror"].is_null());
         feed(
             &mut p,

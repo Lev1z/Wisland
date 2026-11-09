@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { SessionPicker } from "./session-picker";
 import { buildSessionOptions, type RuntimeSession } from "./session-options";
-import { type EventDetail, type RuntimeEvent } from "./runtime-detail";
+import { associationNames, type EventDetail, type RuntimeEvent } from "./runtime-detail";
 import { detailTitle, renderDetailContent } from "./runtime-detail-view";
 type Snapshot = {
   revision: number; sessionId: string | null; automatic: boolean;
@@ -32,6 +32,7 @@ let tab: "overview" | "raw" = "overview";
 let requestSerial = 0;
 let restoreAuto = false;
 let savedScroll = 0;
+let savedAnchor: { id: string; offset: number } | null = null;
 let returnFocus: string | null = null;
 let renderingList = false;
 let inspectorPhase: "closed" | "opening" | "open" | "closing" = "closed";
@@ -127,8 +128,8 @@ function renderList(): void {
   const existing = new Map([...list.querySelectorAll<HTMLButtonElement>(".event-row")].map(row => [row.dataset.event!, row]));
   const rows: HTMLButtonElement[] = [];
   let previousTurn: string | null = null;
-  // File order is the timeline order: never move a delayed result back beside
-  // its tool call. call_id association remains available inside Inspector.
+  // Backend supplies logical headings; underlying events still retain source
+  // order. In particular, delayed tool results are never pulled backwards.
   for (const event of state.events) {
     const row = existing.get(event.id) ?? button("event-row", "", () => void openEvent(event.id));
     const firstInTurn = event.turnId !== previousTurn;
@@ -144,7 +145,7 @@ function renderList(): void {
       if (event.modelCall) {
         row.dataset.modelCall = event.modelCall.responseId;
         const marker = node("span", "request-marker", `#${event.modelCall.number}`);
-        marker.title = `模型调用 #${event.modelCall.number} 完成\nresponse_id: ${event.modelCall.responseId}\n此处为完成记录，未推算请求起点或耗时`;
+        marker.title = `模型 #${event.modelCall.number}\nresponse_id: ${event.modelCall.responseId}\n${associationNames[event.modelPresentation?.association ?? "unassociated"]}\n标题位置不代表请求开始时间`;
         marker.setAttribute("aria-label", marker.title);
         gutter.append(marker);
       } else { delete row.dataset.modelCall; }
@@ -171,6 +172,10 @@ function renderList(): void {
     const next = anchor && [...list.querySelectorAll<HTMLElement>(".event-row")].find(e => e.dataset.event === anchor.dataset.event);
     list.scrollTop = previousTop;
     if (next) list.scrollTop += next.getBoundingClientRect().top - top - anchorOffset;
+    if (selected && savedAnchor) {
+      const returnRow = [...list.querySelectorAll<HTMLElement>(".event-row")].find(e => e.dataset.event === savedAnchor!.id);
+      if (returnRow) savedScroll = list.scrollTop + returnRow.getBoundingClientRect().top - top - savedAnchor.offset;
+    }
   }
   if (focused && !selected) [...list.querySelectorAll<HTMLElement>(".event-row")].find(e => e.dataset.event === focused)?.focus({ preventScroll: true });
   requestAnimationFrame(() => { renderingList = false; });
@@ -204,6 +209,9 @@ async function openEvent(id: string): Promise<void> {
   const fresh = inspectorPhase === "closed";
   if (fresh) {
     savedScroll = list.scrollTop; returnFocus = id;
+    const listTop = list.getBoundingClientRect().top;
+    const anchor = [...list.querySelectorAll<HTMLElement>(".event-row")].find(row => row.getBoundingClientRect().top >= listTop);
+    savedAnchor = anchor ? { id: anchor.dataset.event!, offset: anchor.getBoundingClientRect().top - listTop } : null;
     // Reading details pauses scrolling as well as automatic session switching.
     // Otherwise a live append can jump the list on the first snapshot after close.
     setFollowing(false);

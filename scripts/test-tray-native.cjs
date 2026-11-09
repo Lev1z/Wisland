@@ -137,7 +137,10 @@ async function main() {
     await invoke('set_display_mode', { mode: 'tray' });
     assert.equal(await visible(), false, 'tray mode must not show a persistent window');
     if (runtimeHome) {
-      const initial = await until(async () => { const value = await invoke('get_runtime_snapshot'); return value.events.length === 3 && value; }, 'initial runtime fixture');
+      const initial = await until(async () => { const value = await invoke('get_runtime_snapshot'); return value.events.length === 4 && value; }, 'initial runtime fixture');
+      const pendingHeader = initial.events.find(e => e.kind === 'model');
+      assert.equal(pendingHeader.status, 'awaiting_association');
+      assert.equal(pendingHeader.modelCall, null);
       assert.equal(initial.sessions[0].label, 'Runtime 侧栏回归会话', 'rollout UUID maps to Codex title');
       await fs.appendFile(path.join(runtimeHome, 'session_index.jsonl'), JSON.stringify({ id: runtimeThreadId, thread_name: '会话重命名验证' }) + '\n');
       await until(async () => (await invoke('get_runtime_snapshot')).sessions[0].label === '会话重命名验证', 'rename synchronization');
@@ -146,13 +149,13 @@ async function main() {
       const split = line.indexOf(Buffer.from('中')) + 1; // split inside a UTF-8 character
       await fs.appendFile(runtimeFile, line.subarray(0, split));
       await pause(700);
-      assert.equal((await invoke('get_runtime_snapshot')).events.length, 3, 'an incomplete UTF-8 line must not be parsed');
+      assert.equal((await invoke('get_runtime_snapshot')).events.length, 4, 'an incomplete UTF-8 line must not be parsed');
       await fs.appendFile(runtimeFile, line.subarray(split));
-      const appended = await until(async () => { const value = await invoke('get_runtime_snapshot'); return value.events.length === 4 && value; }, 'incremental append');
-      assert.equal(appended.events[3].summary, '中文执行结果');
-      assert.equal(appended.events[2].turnId, appended.events[3].turnId);
-      await popup.waitForFunction(() => document.querySelectorAll('.event-row').length === 4);
-      const inspected = await invoke('get_runtime_event', { sessionId: appended.sessionId, id: appended.events[2].id });
+      const appended = await until(async () => { const value = await invoke('get_runtime_snapshot'); return value.events.length === 5 && value; }, 'incremental append');
+      assert.equal(appended.events[4].summary, '中文执行结果');
+      assert.equal(appended.events[3].turnId, appended.events[4].turnId);
+      await popup.waitForFunction(() => document.querySelectorAll('.event-row').length === 5);
+      const inspected = await invoke('get_runtime_event', { sessionId: appended.sessionId, id: appended.events[3].id });
       assert.equal(inspected.related[0].detail.content, '中文执行结果');
       await invoke('set_tray_expanded', { expanded: true });
       await until(visible, 'Inspector native host');
@@ -173,11 +176,19 @@ async function main() {
       await invoke('set_tray_expanded', { expanded: false });
       await until(async () => !(await visible()), 'Inspector native host hidden');
       console.log('PASS: native Inspector command / related output / deduplication / raw tab / close');
-      await fs.appendFile(runtimeFile, record('token_usage_record', { turn_id: 'qa-turn', response_id: 'qa-response', usage: { total_tokens: 42 } })
-        + record('event_msg', { type: 'raw_response_completed', response_id: 'qa-response', token_usage: { total_tokens: 42 } }));
-      const completion = await until(async () => { const value = await invoke('get_runtime_snapshot'); return value.events.length === 5 && value; }, 'explicit model completion');
-      assert.equal(completion.events[4].modelCall.responseId, 'qa-response');
-      assert.equal(completion.events[4].modelCall.number, 1, 'completion mirrors represent one model call');
+      await fs.appendFile(runtimeFile, record('token_usage_record', { turn_id: 'qa-turn', response_id: 'qa-response', usage: { total_tokens: 42 } }));
+      const accounted = await until(async () => { const value = await invoke('get_runtime_snapshot'); return value.events.some(e => e.status === 'usage_recorded') && value; }, 'model usage without completion');
+      assert.equal(accounted.events[2].id, pendingHeader.id, 'pending heading is promoted in place before its tool');
+      assert.equal(accounted.events[2].status, 'usage_recorded');
+      assert.equal(accounted.events[2].modelPresentation.association, 'sequence');
+      await fs.appendFile(runtimeFile, record('event_msg', { type: 'raw_response_completed', response_id: 'qa-response', token_usage: { total_tokens: 42 } }));
+      const completion = await until(async () => { const value = await invoke('get_runtime_snapshot'); return value.events.some(e => e.status === 'response_completed') && value; }, 'explicit model completion');
+      assert.equal(completion.events.length, 5);
+      assert.equal(completion.events[2].modelCall.responseId, 'qa-response');
+      assert.equal(completion.events[2].modelCall.number, 1, 'completion mirrors represent one model call');
+      const modelDetail = await invoke('get_runtime_event', { sessionId: completion.sessionId, id: pendingHeader.id });
+      assert.equal(modelDetail.detail.raw.payload.response_id, 'qa-response');
+      assert.equal(modelDetail.related.length, 2, 'associated tool and output are readable without moving the output');
       await popup.waitForFunction(() => document.querySelectorAll('.request-marker').length === 1);
       assert.equal(await popup.locator('.turn-group, .step-group').count(), 0, 'native view uses a flat timeline');
       await assert.rejects(invoke('select_runtime_session', { id: '../../auth.json' }), /会话不在/);

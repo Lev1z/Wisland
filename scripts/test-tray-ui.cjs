@@ -7,6 +7,7 @@ const fs = require('node:fs/promises');
 const http = require('node:http');
 const path = require('node:path');
 const { checkInspector } = require('./test-inspector-ui.cjs');
+const { checkModelHeaders } = require('./test-model-headers-ui.cjs');
 const { checkSessionHierarchy } = require('./test-session-picker-ui.cjs');
 const root = path.resolve(__dirname, '../dist');
 const output = path.resolve(__dirname, '../target/tray-ui-qa');
@@ -47,13 +48,13 @@ async function main() {
         const runtime = {
           revision: 1, sessionId: 'test-session', automatic: true,
           sessions: [{ id: 'test-session', label: '优化 Wisland Runtime 侧栏', fileName: 'rollout-test-session.jsonl', threadId: '019a6b3c-1234-5678-9abc-0123456789ab', modified: 1 }],
-          notice: '只读时间线 · 圆点标注已记录的模型完成调用', error: null,
+          notice: '只读时间线 · 模型标题前置，关联依据见详情', error: null,
           turnStatus: { t1: 'completed', t2: 'started' },
           events: Array.from({ length: 72 }, (_, i) => ({
             id: String(i), turnId: i < 36 ? 't1' : 't2', turnNumber: i < 36 ? 1 : 2,
             modelCall: i % 12 === 11 ? { responseId: `resp-${i}`, number: Math.floor(i / 12) + 1 } : null,
             kind: i === 0 ? 'context' : i % 12 === 11 ? 'model' : ['assistant', 'tool', 'result'][i % 3],
-            summary: i % 12 === 11 ? `调用 #${Math.floor(i / 12) + 1} 已完成` : ['分析已有代码及执行计划', 'exec_command · npm run test', '12 tests passed'][i % 3],
+            summary: i % 12 === 11 ? `#${Math.floor(i / 12) + 1} · 工具调用 · 已记录用量` : ['分析已有代码及执行计划', 'exec_command · npm run test', '12 tests passed'][i % 3],
             timestamp: '2026-11-09T01:00:00Z', sourceType: 'response_item.function_call', callId: `call-${Math.floor(i / 3)}`, status: null,
           })),
         };
@@ -289,6 +290,7 @@ async function main() {
         assert.equal(await page.locator('#trajectory-list').evaluate(e => e.scrollTop), 100, 'paused reader keeps position on append');
       }
       if (scenario.name === 'dual') await checkInspector(page, { theme, scale, output });
+      if (scenario.name === 'dual') await checkModelHeaders(page, { theme, scale, output });
       assert.equal(await page.locator('#quota-rings').isVisible(), false, 'expanded panel must not repeat the rings');
       assert.ok(await page.evaluate(() => {
         const details = document.getElementById('details');

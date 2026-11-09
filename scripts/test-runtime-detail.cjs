@@ -103,6 +103,30 @@ test('model facts use recorded usage and mirror fallback, never inferred timings
   assert.ok(!model.facts.some(f => f.label.includes('耗时')));
   assert.ok(model.blocks[0].text.includes('extra_tokens'));
 });
+test('model headings distinguish usage, completion and pending without inheriting operation duration', () => {
+  for (const [status, label] of [['usage_recorded', '已记录用量'], ['response_completed', '响应已结束'], ['response_observed', '已关联响应']]) {
+    const detail = entry('model', { type: 'compacted', status: 'completed', duration_ms: 9000, usage: { total_tokens: 12 } }, '', {
+      status, modelCall: { responseId: 'r', number: 2 }, modelPresentation: { association: 'direct', purpose: '上下文压缩', anchorId: 'source' },
+    });
+    detail.detail.modelAssociation = { method: 'direct', sourceEventId: 'source', responseId: 'r' };
+    const model = overviewFor(detail);
+    assert.equal(model.title, '模型 #2 · 上下文压缩');
+    assert.equal(model.facts.find(f => f.label === '响应记录').value, label);
+    assert.equal(model.facts.find(f => f.label === '关联依据').value, '直接关联');
+    assert.ok(!model.facts.some(f => f.label.includes('耗时')));
+    assert.equal(model.technical.model_association.responseId, 'r');
+  }
+  const pending = overviewFor(entry('model', {}, '', { status: 'awaiting_association', modelPresentation: { association: 'pending', purpose: '输出待关联', anchorId: 'a' } }));
+  assert.equal(pending.title, '模型输出 · 待关联');
+  assert.ok(pending.lead.text.includes('不计入模型请求编号'));
+});
+
+test('model overview shows associated output in source order', () => {
+  const detail = entry('model', { usage: { input_tokens: 2 } }, '', { status: 'usage_recorded', modelCall: { responseId: 'r', number: 1 } });
+  detail.related = [entry('tool', {}, '', { summary: '运行测试' }), entry('result', {}, '', { summary: '测试通过' })];
+  assert.equal(overviewFor(detail).blocks.find(b => b.id === 'model-outputs').text, '工具 · 运行测试\n结果 · 测试通过');
+});
+
 test('unknown records fall back to payload, errors remain visible', () => {
   assert.ok(overviewFor(entry('record', { type: 'future_event', extra: 7 })).blocks[0].text.includes('extra'));
   const model = overviewFor(entry('error', { error: { message: 'failed' } }, 'failed to run'));

@@ -4,11 +4,12 @@ export type RuntimeEvent = {
   id: string; turnId: string; turnNumber: number | null;
   modelCall: { responseId: string; number: number } | null; kind: string; summary: string;
   timestamp: string | null; sourceType: string; callId: string | null; status: string | null;
+  modelPresentation?: { association: string; purpose: string; anchorId: string };
 };
 type RecordData = { payload?: Record<string, unknown>; [key: string]: unknown };
 export type EventDetail = {
   event: RuntimeEvent;
-  detail: { raw: RecordData; mirror?: RecordData; content: string; byteOffset: number; rolloutId?: string };
+  detail: { raw: RecordData; mirror?: RecordData; content: string; byteOffset: number; rolloutId?: string; modelAssociation?: Record<string, unknown> };
   related: { event: RuntimeEvent; detail: EventDetail["detail"] }[];
 };
 type Entry = Pick<EventDetail, "event" | "detail">;
@@ -51,6 +52,10 @@ const toolName = (entry: Entry): string => {
 const statusNames: Record<string, string> = {
   completed: "已完成", failed: "失败", error: "异常", aborted: "已中断", interrupted: "已中断",
   in_progress: "进行中（记录时）", running: "运行中（记录时）", started: "已开始（记录时）", cancelled: "已取消",
+  usage_recorded: "已记录用量", response_completed: "响应已结束", response_observed: "已关联响应", awaiting_association: "待关联",
+};
+export const associationNames: Record<string, string> = {
+  direct: "直接关联", sequence: "顺序推断", mixed: "直接关联 + 顺序推断", unassociated: "输出未关联", pending: "待关联",
 };
 function secondsText(seconds: number): string {
   if (seconds < 60) return `${Number(seconds.toFixed(3))} 秒`;
@@ -192,6 +197,7 @@ export function overviewFor(detail: EventDetail): DetailOverview {
     technical: Object.fromEntries(Object.entries({ source: event.sourceType, timestamp: event.timestamp,
       turn_id: event.turnId === "unattributed" ? undefined : event.turnId, response_id: event.modelCall?.responseId,
       call_id: event.callId, byte_offset: data.byteOffset, rollout_id: data.rolloutId,
+      model_association: data.modelAssociation,
       ...(data.mirror ? { mirrored_record: "另一条源记录已合并；请在「原始内容」查看" } : {}),
     }).filter(([, value]) => present(value))),
   };
@@ -275,12 +281,29 @@ export function overviewFor(detail: EventDetail): DetailOverview {
     outputs(detail, "output", "输出", false);
     for (const related of detail.related.filter(r => r.event.kind === "tool")) inputs(related, `related-${related.event.id}-`, true);
   } else if (event.kind === "model") {
+    const presentation = event.modelPresentation;
+    const method = presentation?.association ?? String(data.modelAssociation?.method ?? "unassociated");
+    // These headings describe observed response evidence, not inferred running
+    // requests. Never borrow status/timing from a compaction installation item.
+    model.facts = model.facts.filter(f => !["状态", "耗时", "耗时（原值）", "阶段", "执行成功", "退出码"].includes(f.label));
+    model.facts.unshift({ label: "响应记录", value: statusNames[event.status ?? ""] ?? "未记录结束状态" });
+    if (presentation) {
+      model.title = event.modelCall ? `模型 #${event.modelCall.number} · ${presentation.purpose}` : "模型输出 · 待关联";
+      model.facts.push({ label: "关联依据", value: associationNames[method] ?? method });
+    }
+    model.lead = event.modelCall
+      ? method === "unassociated" ? { text: "已识别响应记录，尚未确定对应输出。" } : undefined
+      : { text: "已观察到模型输出，尚未确定请求归属；不计入模型请求编号。" };
+    model.technical.heading_position = "关联内容的阅读位置，不是请求开始时间";
     const usage = Object.assign({}, ...sources.slice().reverse().map(s => object(parseContainer(s.usage ?? s.token_usage)))) as ObjectValue;
     const keys: [string, string][] = [["input_tokens", "输入 token"], ["cached_input_tokens", "缓存输入 token"], ["output_tokens", "输出 token"], ["reasoning_output_tokens", "推理输出 token"], ["total_tokens", "合计 token"]];
     for (const [key, label] of keys) if (typeof usage[key] === "number") model.facts.push({ label, value: String(usage[key]) });
     const remaining = Object.fromEntries(Object.entries(usage).filter(([key]) => !keys.some(([k]) => k === key)));
     if (Object.keys(remaining).length) block("usage-extra", "其他用量字段", remaining, { secondary: true });
-    if (!model.facts.length) block("model-note", "记录", data.content);
+    if (detail.related.length) {
+      const labels: Record<string, string> = { assistant: "助手", summary: "思考", tool: "工具", result: "结果", compaction: "压缩" };
+      block("model-outputs", "关联内容", detail.related.map(r => `${labels[r.event.kind] ?? "记录"} · ${r.event.summary}`).join("\n"));
+    }
   } else if (event.kind === "lifecycle" && ["task_started", "turn_started", "task_complete", "turn_complete", "turn_aborted"].includes(String(p.type ?? event.sourceType.split(".").pop()))) {
     const type = String(p.type ?? event.sourceType.split(".").pop());
     const started = type.endsWith("started");
