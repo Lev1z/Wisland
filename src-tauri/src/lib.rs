@@ -15,6 +15,7 @@ mod display;
 mod runtime;
 mod updater;
 mod theme;
+mod capsule_backdrop;
 
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};

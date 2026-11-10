@@ -36,7 +36,11 @@ tauri-plugin-updater = "=2.9.0"
 semver = "1"
 
 [target.'cfg(windows)'.dependencies]
+windows-numerics = "=0.2.0"
 windows = { version = "0.61", features = [
+    "UI_Composition_Desktop",
+    "System",
+    "Win32_System_WinRT_Composition",
     "Win32_UI_WindowsAndMessaging",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_Accessibility",

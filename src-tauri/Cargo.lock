@@ -5614,6 +5614,7 @@ dependencies = [
  "tauri-plugin-updater",
  "tokio",
  "windows",
+ "windows-numerics",
  "winreg 0.52.0",
 ]
 
