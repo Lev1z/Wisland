@@ -23,7 +23,7 @@ Wisland presents Codex status and quota, media information, Obsidian notes, and 
 
 - **Codex status and quota** — the outer concentric ring shows the weekly quota and the inner ring shows the five-hour quota; the status indicator distinguishes idle, running, and offline states.
 - **Codex tray mode** — hide the capsule and keep only a status-colored quota ring in the standard Windows notification area. Hover for percentages or click for a Windows-style detail panel. Weekly-only accounts are supported.
-- **Runtime timeline and Inspector** — incrementally follow local Codex JSONL in read-only mode, with recorded turns, model-call completions, and tool results. Resolve conversation names, select forks, read Markdown overviews, and inspect fully expanded raw records inside the sidebar.
+- **Runtime timeline and Inspector** — incrementally follow local Codex JSONL in read-only mode, with turns, leading model headings, and tool results. Distinguish direct, sequential, and pending associations; resolve conversation names, select forks, read Markdown overviews, and inspect raw records inside the sidebar.
 - **Music, lyrics, and controls** — read track metadata, artwork, progress, and playback state from Windows SMTC, with playback controls, volume, album-colored waveforms, and per-player lyric timing.
 - **Obsidian quick notes** — append notes, tasks, and journal entries to a selected Vault and manage today's entries from the capsule.
 - **Temporary file tray** — keep references to dropped files and drag them out or open them later without copying or modifying the originals.
@@ -44,6 +44,15 @@ The installer is recommended over copying the standalone `Wisland.exe` from a bu
 - Optional: Codex Desktop and Codex CLI for status and quota features
 - Optional: a media player that exposes Windows SMTC sessions
 - Optional: Obsidian for quick notes
+
+### v0.2.2 highlights
+
+- Adds leading model headings with in-place pending association updates. Usage records no longer imply response completion; request start times and durations are not invented.
+- Renders context rules and messages as readable Markdown, separates compaction summaries from retained history, and preserves unknown fields and raw records.
+- Improves command, batch-output, and turn overviews. Related tools and technical details expand in one click; clicking the tray icon again hides the sidebar.
+- Preserves actual fork hierarchy when parent conversations are missing or archived.
+- Pauses automatic trajectory work while hidden, catches up on reopen, shares retained details, and centralizes status sampling without changing window materials, warm-up, or animations.
+- [Full release notes (Chinese)](docs/releases/v0.2.2.md) · [Performance results and measurement limits (Chinese)](docs/performance.md).
 
 ### v0.2.1 highlights
 
@@ -82,7 +91,7 @@ The installer is recommended over copying the standalone `Wisland.exe` from a bu
 
 ### Capsule and tray modes
 
-Version 0.2.1 upgrades the quota popup to a right-edge Runtime sidebar with a flat, DSH-inspired event timeline and an embedded Inspector. Aligned rows retain colored markers and compact labels; the gutter identifies turns and explicitly recorded model-call completions. Missing call boundaries are reported, never inferred from tool calls. See the [data contract and test guide (Chinese)](docs/runtime-sidebar.md).
+The right-edge Runtime sidebar provides a flat, DSH-inspired event timeline and an embedded Inspector. Version 0.2.2 adds leading model headings while retaining colored markers, compact labels, and turn numbers. Details distinguish direct associations from conservative sequential inference; pending output is not counted as a confirmed request, usage does not prove completion, and heading positions are not request start times. See the [data contract and test guide (Chinese)](docs/runtime-sidebar.md).
 
 The keyboard-accessible session picker stays inside the sidebar and truncates long titles. Stable thread IDs resolve Codex names and merge multiple rollout files; actual forks remain separate and labeled. A read-only local index selects the current rollout, and bounded history references recover retained records. Missing or compressed history is reported explicitly.
 
