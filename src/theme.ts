@@ -3,13 +3,13 @@ import { listen } from "@tauri-apps/api/event";
 import "./theme.css";
 
 type ThemeSettings = {
+  theme?: string;
   borderEffect?: string; border_effect?: string;
   borderCustomSource?: string; border_custom_source?: string;
   borderAssets?: { id: string; data_url?: string; dataUrl?: string }[];
   border_assets?: { id: string; data_url?: string; dataUrl?: string }[];
 };
 type Material = { acrylic: boolean; dark: boolean; motion: boolean };
-export const themeNames = ["off", "aurora", "mono", "glass", "custom"] as const;
 
 export function initTheme(surface: "capsule" | "settings" | "sidebar"): void {
   const root = document.documentElement;
@@ -60,21 +60,17 @@ export function initTheme(surface: "capsule" | "settings" | "sidebar"): void {
   }
   const apply = async (settings: ThemeSettings) => {
     const id = ++generation;
-    const value = settings.borderEffect ?? settings.border_effect ?? "off";
-    const theme = (themeNames as readonly string[]).includes(value) ? value : "off";
+    const border = settings.borderEffect ?? settings.border_effect ?? "off";
+    const theme = settings.theme === "glass" || (!settings.theme && border === "glass") ? "glass" : "dark";
     glass = theme === "glass";
     if (glass) await clip();
     const material = await invoke<Material>("get_window_theme");
     if (id !== generation) return;
     glass = theme === "glass" && material.acrylic;
     root.dataset.wislandTheme = theme;
+    root.dataset.borderEffect = ["aurora", "mono"].includes(border) ? border : "off";
     root.dataset.acrylic = String(material.acrylic);
     root.dataset.theme = material.dark ? "dark" : "light";
-    const source = settings.borderCustomSource ?? settings.border_custom_source ?? "";
-    const assets = settings.borderAssets ?? settings.border_assets ?? [];
-    const asset = assets.find(a => `asset:${a.id}` === source);
-    const image = source.startsWith("data:image/") ? source : asset?.dataUrl ?? asset?.data_url ?? "";
-    root.style.setProperty("--theme-custom-image", image ? `url(${JSON.stringify(image)})` : "none");
     if (capsule) {
       if (!glass) { await invoke("sync_capsule_theme_clip", { bounds: null }); lastBounds = ""; }
       else { followUntil = performance.now() + 800; follow(); }

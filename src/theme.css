@@ -15,19 +15,15 @@
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor; mask-composite: exclude;
 }
-:root[data-wisland-theme="aurora"][data-surface="settings"] body::after,
-:root[data-wisland-theme="aurora"][data-surface="sidebar"] .details::after {
+:root[data-border-effect="aurora"][data-surface="settings"] body::after,
+:root[data-border-effect="aurora"][data-surface="sidebar"] .details::after {
   opacity: .9; background: conic-gradient(from var(--theme-angle), #70e6ff, #9b7cff, #ff72b5, #ffd56b, #70e6ff);
   animation: wisland-theme-border 4s linear infinite;
 }
-:root[data-wisland-theme="mono"][data-surface="settings"] body::after,
-:root[data-wisland-theme="mono"][data-surface="sidebar"] .details::after {
+:root[data-border-effect="mono"][data-surface="settings"] body::after,
+:root[data-border-effect="mono"][data-surface="sidebar"] .details::after {
   opacity: .72; background: conic-gradient(from var(--theme-angle), #ffffff14, #fff, #ffffff14 38%);
   animation: wisland-theme-border 6s linear infinite;
-}
-:root[data-wisland-theme="custom"][data-surface="settings"] body::after,
-:root[data-wisland-theme="custom"][data-surface="sidebar"] .details::after {
-  opacity: .9; background: #002fa7 var(--theme-custom-image, none) center / cover;
 }
 
 /* Native DWM supplies the blur. CSS stays opaque when native acrylic is unavailable. */
@@ -43,4 +39,9 @@
 /* Intro layers are opaque behind the old sidebar. Retire them only after the
    unchanged entrance has finished, so glass does not retain a purple underlay. */
 :root[data-surface="settings"][data-wisland-theme="glass"][data-acrylic="true"] .menu-open .menu-prelayers { visibility: hidden; transition: visibility 0s .85s; }
+:root[data-surface="settings"][data-wisland-theme="glass"] .menu-prelayer-back { background: #a0a0a020; }
+:root[data-surface="settings"][data-wisland-theme="glass"] .menu-prelayer-front { background: #b8b8b82b; backdrop-filter: blur(12px); }
+.effect-dark { background: #111; border: 1px solid #ffffff22; }
+:root[data-wisland-theme="glass"] :is(#update-details, #update-confirm) { background: #303030df; border-color: #ffffff30; backdrop-filter: blur(22px); color: #f1f2f4; }
+:root[data-wisland-theme="glass"] :is(#update-details, #update-confirm)::backdrop { background: #0005; backdrop-filter: blur(2px); }
 .effect-glass { border: 1px solid #ffffff55; background: linear-gradient(135deg, #ffffff44, #ffffff0a); box-shadow: inset 0 0 10px #ffffff14; }

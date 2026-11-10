@@ -159,6 +159,7 @@ pub fn run() {
             let icon_bar_style = Arc::new(Mutex::new(settings.icon_bar_style.clone()));
             let icon_bar_order = Arc::new(Mutex::new(settings.icon_bar_order.clone()));
             let border_effect = Arc::new(Mutex::new(settings.border_effect.clone()));
+            let theme = Arc::new(Mutex::new(settings.theme.clone()));
             let border_custom_source = Arc::new(Mutex::new(settings.border_custom_source.clone()));
             let left_visual_mode = Arc::new(Mutex::new(settings.left_visual_mode.clone()));
             let left_visual_source = Arc::new(Mutex::new(settings.left_visual_source.clone()));
@@ -210,6 +211,7 @@ pub fn run() {
                 icon_bar_style: icon_bar_style.clone(),
                 icon_bar_order: icon_bar_order.clone(),
                 border_effect: border_effect.clone(),
+                theme: theme.clone(),
                 border_custom_source: border_custom_source.clone(),
                 left_visual_mode: left_visual_mode.clone(),
                 left_visual_source: left_visual_source.clone(),
@@ -989,6 +991,7 @@ pub struct IslandState {
     pub icon_bar_style: Arc<Mutex<String>>,
     pub icon_bar_order: Arc<Mutex<Vec<String>>>,
     pub border_effect: Arc<Mutex<String>>,
+    pub theme: Arc<Mutex<String>>,
     pub border_custom_source: Arc<Mutex<String>>,
     pub left_visual_mode: Arc<Mutex<String>>,
     pub left_visual_source: Arc<Mutex<String>>,

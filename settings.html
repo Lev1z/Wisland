@@ -153,15 +153,18 @@
           </div>
           <div class="setting-group">
             <h3>主题</h3>
+            <div id="theme-options" class="effect-options">
+              <button type="button" data-theme="dark"><i class="effect-preview effect-dark"></i><span>暗黑</span></button>
+              <button type="button" data-theme="glass"><i class="effect-preview effect-glass"></i><span>毛玻璃</span></button>
+            </div>
+          </div>
+          <div class="setting-group">
+            <h3>边框</h3>
             <div id="border-effect-options" class="effect-options">
-              <button type="button" data-effect="off"><i class="effect-preview effect-off"></i><span>暗黑</span></button>
+              <button type="button" data-effect="off"><i class="effect-preview effect-off"></i><span>关闭</span></button>
               <button type="button" data-effect="aurora"><i class="effect-preview effect-aurora"></i><span>彩虹边框</span></button>
               <button type="button" data-effect="mono"><i class="effect-preview effect-mono"></i><span>白色边框</span></button>
-              <button type="button" data-effect="glass"><i class="effect-preview effect-glass"></i><span>毛玻璃</span></button>
             </div>
-            <div id="border-asset-options" class="visual-options border-assets"></div>
-            <div class="import-row"><button id="import-border-visual" class="secondary-button compact" type="button">导入边框动图</button><span id="border-import-name"></span></div>
-            <input id="border-visual-file" type="file" multiple accept="image/gif,image/webp,image/apng,image/png,image/svg+xml" hidden />
           </div>
         </section>
 
@@ -197,16 +200,16 @@
             </button>
           </div>
           <section class="update-card" aria-label="软件更新">
-            <div class="update-row"><div class="update-summary"><strong>软件更新</strong><button id="update-message" type="button" aria-live="polite" aria-haspopup="dialog" title="查看更新说明与详情">正在读取…</button><progress id="update-progress" aria-label="下载进度" hidden></progress></div><div class="update-actions"><button id="update-check" class="secondary-button" type="button">检查更新</button><button id="update-install" class="primary-button" type="button" hidden>下载更新</button><button id="update-manual" type="button">手动下载</button></div></div>
+            <div class="update-row"><div class="update-summary"><strong>软件更新</strong><button id="update-message" type="button" aria-live="polite" aria-haspopup="dialog" title="查看更新说明与详情" hidden></button><progress id="update-progress" aria-label="下载进度" hidden></progress></div><div class="update-actions"><button id="update-check" class="secondary-button" type="button">检查更新</button><button id="update-install" class="primary-button" type="button" hidden>下载更新</button></div></div>
             <div class="update-row"><label title="最多每天一次，只检查，不自动下载或安装"><span>启动时自动检查</span><input id="update-auto" type="checkbox" class="toggle" /></label><small id="update-checked">尚未检查</small></div>
           </section>
           </div>
-          <dialog id="update-details"><h3>更新详情</h3><p id="update-detail-status"></p><pre id="update-notes"></pre><button id="update-details-close" class="secondary-button" type="button">关闭</button></dialog>
-          <dialog id="update-confirm"><h3>确认更新</h3><p id="update-confirm-text"></p><div class="button-row"><button id="update-cancel" class="secondary-button" type="button">暂不更新</button><button id="update-confirm-install" class="primary-button" type="button">确认下载并安装</button></div></dialog>
         </section>
       </div>
     </section>
   </main>
+<dialog id="update-details"><h3 id="update-details-title">更新详情</h3><p id="update-detail-status"></p><pre id="update-notes"></pre><div class="dialog-actions"><button id="update-manual" class="text-button" type="button">手动下载</button><button id="update-details-close" class="secondary-button compact" type="button">关闭</button></div></dialog>
+<dialog id="update-confirm"><h3>确认更新</h3><p id="update-confirm-text"></p><div class="dialog-actions"><button id="update-cancel" class="secondary-button compact" type="button">暂不更新</button><button id="update-confirm-install" class="primary-button" type="button">确认下载并安装</button></div></dialog>
   <script type="module" src="/src/settings.ts"></script>
 </body>
 </html>

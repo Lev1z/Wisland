@@ -259,6 +259,10 @@ pub fn apply(panel: &tauri::WebviewWindow, previous: Option<Appearance>, theme: 
         dark,
         motion: animations.as_bool() && !high_contrast,
     };
+    if panel.label() == "main" {
+        result.acrylic = crate::theme::apply_capsule_material(panel, requested, previous);
+        return result;
+    }
     // Reapplying an unchanged backdrop tears down its composition surface and can
     // expose a white frame. Keep the initialized surface across show/hide cycles.
     if let Some(previous) = previous {

@@ -75,7 +75,6 @@ function applyAppearance(settings: Appearance): void {
   const legacyRainbow = settings.rainbowBorder ?? settings.rainbow_border ?? false;
   const borderEffect = settings.borderEffect ?? settings.border_effect ?? (legacyRainbow ? "aurora" : "off");
   const visualAssets = settings.visualAssets ?? settings.visual_assets ?? [];
-  const borderAssets = settings.borderAssets ?? settings.border_assets ?? [];
   for (const [property, value] of Object.entries(dimensions)) {
     document.documentElement.style.setProperty(property, `${value * scale}px`);
   }
@@ -88,15 +87,10 @@ function applyAppearance(settings: Appearance): void {
     "border-effect-mono",
     "border-effect-custom",
   );
-  if (["klein", "aurora", "mono", "custom"].includes(borderEffect)) {
+  if (["aurora", "mono"].includes(borderEffect)) {
     capsule.classList.add(`border-effect-${borderEffect}`);
   }
-  const borderSource = resolveVisualSource(settings.borderCustomSource ?? settings.border_custom_source, borderAssets);
-  if (borderEffect === "custom" && borderSource) {
-    capsule.style.setProperty("--custom-border-image", `url(${JSON.stringify(borderSource)})`);
-  } else {
-    capsule.style.removeProperty("--custom-border-image");
-  }
+  capsule.style.removeProperty("--custom-border-image");
 
   const leftSource = resolveVisualSource(settings.leftVisualSource ?? settings.left_visual_source, visualAssets);
   const leftCustom = (settings.leftVisualMode ?? settings.left_visual_mode) === "custom" && !!leftSource;

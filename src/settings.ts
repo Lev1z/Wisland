@@ -17,6 +17,7 @@ type CoreSettings = {
   icon_bar_style?: string;
   icon_bar_order?: string[];
   border_effect?: string;
+  theme?: string;
   border_custom_source?: string;
   left_visual_mode?: string;
   left_visual_source?: string;
@@ -112,6 +113,7 @@ const navItems = Array.from(document.querySelectorAll<HTMLButtonElement>(".nav-i
 
 let iconOrder: ViewId[] = ["time", "lyric", "journal", "tray"];
 let borderEffect = "off";
+let theme = "dark";
 let borderCustomSource = "";
 let leftVisualMode = "codex";
 let leftVisualSource = "";
@@ -321,46 +323,12 @@ function deleteVisualAsset(id: string): void {
 }
 
 function renderBorderEffects(): void {
-  document.querySelectorAll<HTMLButtonElement>("#border-effect-options button").forEach((button) => {
+  document.querySelectorAll<HTMLButtonElement>("#border-effect-options button").forEach(button => {
     button.classList.toggle("active", button.dataset.effect === borderEffect);
   });
-  const container = element<HTMLElement>("border-asset-options");
-  container.replaceChildren();
-  for (const asset of borderAssets) {
-    const choice = document.createElement("div");
-    choice.className = "asset-choice";
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "visual-option border-asset-option";
-    button.classList.toggle("active", borderEffect === "custom" && borderCustomSource === `asset:${asset.id}`);
-    const preview = document.createElement("img");
-    preview.alt = "";
-    preview.src = asset.data_url;
-    button.append(preview, visualCopy(asset.name || "未命名边框"));
-    button.addEventListener("click", () => {
-      borderEffect = "custom";
-      borderCustomSource = `asset:${asset.id}`;
-      renderBorderEffects();
-      queueSave(80);
-    });
-    const remove = document.createElement("button");
-    remove.type = "button";
-    remove.className = "asset-delete";
-    remove.title = `删除 ${asset.name}`;
-    remove.setAttribute("aria-label", remove.title);
-    remove.textContent = "×";
-    remove.addEventListener("click", () => {
-      borderAssets = borderAssets.filter((item) => item.id !== asset.id);
-      if (borderCustomSource === `asset:${asset.id}`) {
-        borderEffect = "off";
-        borderCustomSource = "";
-      }
-      renderBorderEffects();
-      queueSave(0);
-    });
-    choice.append(button, remove);
-    container.appendChild(choice);
-  }
+  document.querySelectorAll<HTMLButtonElement>("#theme-options button").forEach(button => {
+    button.classList.toggle("active", button.dataset.theme === theme);
+  });
   updateAssetCounters();
 }
 
@@ -368,9 +336,6 @@ function updateAssetCounters(): void {
   const visualText = visualAssets.length ? `素材库：${visualAssets.length} 个` : "";
   element<HTMLElement>("left-import-name").textContent = visualText;
   element<HTMLElement>("right-import-name").textContent = visualText;
-  element<HTMLElement>("border-import-name").textContent = borderAssets.length
-    ? `边框素材：${borderAssets.length} 个`
-    : "";
 }
 
 async function readImageFile(file: File): Promise<string> {
@@ -472,6 +437,7 @@ async function persistSettings(): Promise<void> {
       iconBarStyle: iconBarStyle.value,
       iconBarOrder: iconOrder,
       borderEffect,
+      theme,
       borderCustomSource,
       leftVisualMode,
       leftVisualSource,
@@ -525,6 +491,7 @@ async function loadSettings(): Promise<void> {
     iconBarStyle.value = core.icon_bar_style === "classic" ? "classic" : "option-wheel";
     iconOrder = normalizeOrder(core.icon_bar_order);
     borderEffect = core.border_effect ?? "off";
+    theme = core.theme ?? "dark";
     borderCustomSource = core.border_custom_source ?? "";
     leftVisualMode = core.left_visual_mode ?? "codex";
     leftVisualSource = core.left_visual_source ?? "";
@@ -576,32 +543,12 @@ document.querySelectorAll<HTMLButtonElement>("#border-effect-options button").fo
 
 wireImageImport("left");
 wireImageImport("right");
-const borderFile = element<HTMLInputElement>("border-visual-file");
-element<HTMLButtonElement>("import-border-visual").addEventListener("click", () => borderFile.click());
-borderFile.addEventListener("change", async () => {
-  const files = Array.from(borderFile.files ?? []);
-  if (!files.length) return;
-  try {
-    let lastAsset: CustomAsset | null = null;
-    for (const file of files) {
-      lastAsset = {
-        id: crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-        name: file.name,
-        data_url: await readImageFile(file),
-      };
-      borderAssets.push(lastAsset);
-    }
-    if (lastAsset) {
-      borderCustomSource = `asset:${lastAsset.id}`;
-      borderEffect = "custom";
-    }
+document.querySelectorAll<HTMLButtonElement>("#theme-options button").forEach(button => {
+  button.addEventListener("click", () => {
+    theme = button.dataset.theme ?? "dark";
     renderBorderEffects();
-    queueSave(0);
-  } catch (error) {
-    showStatus(String(error), true, 3500);
-  } finally {
-    borderFile.value = "";
-  }
+    queueSave(80);
+  });
 });
 
 element<HTMLButtonElement>("open-log-dir").addEventListener("click", () => void invoke("open_log_dir"));

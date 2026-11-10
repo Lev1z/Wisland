@@ -118,6 +118,8 @@ pub(crate) struct SettingsData {
     #[serde(default = "default_border_effect")]
     pub border_effect: String,
     #[serde(default)]
+    pub theme: String,
+    #[serde(default)]
     pub border_custom_source: String,
     #[serde(default = "default_left_visual_mode")]
     pub left_visual_mode: String,
@@ -223,9 +225,13 @@ fn default_border_effect() -> String {
 
 fn normalize_border_effect(value: &str) -> String {
     match value.trim() {
-        "aurora" | "mono" | "custom" | "glass" => value.trim().to_string(),
+        "aurora" | "mono" => value.trim().to_string(),
         _ => default_border_effect(),
     }
+}
+
+fn normalize_theme(value: &str, legacy_border: &str) -> String {
+    if value == "glass" || (value.is_empty() && legacy_border == "glass") { "glass" } else { "dark" }.into()
 }
 
 fn default_left_visual_mode() -> String {
@@ -332,6 +338,7 @@ impl Default for SettingsData {
             icon_bar_style: default_icon_bar_style(),
             icon_bar_order: default_icon_bar_order(),
             border_effect: default_border_effect(),
+            theme: "dark".into(),
             border_custom_source: String::new(),
             left_visual_mode: default_left_visual_mode(),
             left_visual_source: String::new(),
@@ -374,11 +381,13 @@ pub(crate) fn load_settings_from_file() -> SettingsData {
             data.capsule_scale = normalize_capsule_scale(data.capsule_scale);
             data.icon_bar_style = normalize_icon_bar_style(&data.icon_bar_style);
             data.icon_bar_order = normalize_icon_bar_order(&data.icon_bar_order);
+            data.theme = normalize_theme(&data.theme, &data.border_effect);
             data.border_effect = if data.border_effect == "off" && data.rainbow_border {
                 "aurora".to_string()
             } else {
                 normalize_border_effect(&data.border_effect)
             };
+            data.rainbow_border = matches!(data.border_effect.as_str(), "aurora" | "mono");
             data.left_visual_mode = normalize_left_visual_mode(&data.left_visual_mode);
             data.right_visual_mode = normalize_right_visual_mode(&data.right_visual_mode);
             data.visual_assets = normalize_custom_assets(&data.visual_assets);
@@ -454,6 +463,7 @@ pub(crate) fn build_settings_data(state: &IslandState) -> SettingsData {
         icon_bar_style: state.icon_bar_style.lock().unwrap().clone(),
         icon_bar_order: state.icon_bar_order.lock().unwrap().clone(),
         border_effect: state.border_effect.lock().unwrap().clone(),
+        theme: state.theme.lock().unwrap().clone(),
         border_custom_source: state.border_custom_source.lock().unwrap().clone(),
         left_visual_mode: state.left_visual_mode.lock().unwrap().clone(),
         left_visual_source: state.left_visual_source.lock().unwrap().clone(),
@@ -569,6 +579,7 @@ pub fn get_settings(state: tauri::State<'_, IslandState>) -> serde_json::Value {
         "icon_bar_style": state.icon_bar_style.lock().unwrap().clone(),
         "icon_bar_order": state.icon_bar_order.lock().unwrap().clone(),
         "border_effect": state.border_effect.lock().unwrap().clone(),
+        "theme": state.theme.lock().unwrap().clone(),
         "border_custom_source": state.border_custom_source.lock().unwrap().clone(),
         "left_visual_mode": state.left_visual_mode.lock().unwrap().clone(),
         "left_visual_source": state.left_visual_source.lock().unwrap().clone(),
@@ -591,6 +602,7 @@ pub fn set_appearance_preferences(
     icon_bar_style: String,
     icon_bar_order: Vec<String>,
     border_effect: String,
+    theme: Option<String>,
     border_custom_source: String,
     left_visual_mode: String,
     left_visual_source: String,
@@ -603,6 +615,7 @@ pub fn set_appearance_preferences(
     let scale = normalize_capsule_scale(scale);
     let icon_bar_style = normalize_icon_bar_style(&icon_bar_style);
     let icon_bar_order = normalize_icon_bar_order(&icon_bar_order);
+    let selected_theme = normalize_theme(theme.as_deref().unwrap_or(&state.theme.lock().unwrap()), &border_effect);
     let mut border_effect = normalize_border_effect(&border_effect);
     let mut left_visual_mode = normalize_left_visual_mode(&left_visual_mode);
     let mut right_visual_mode = normalize_right_visual_mode(&right_visual_mode);
@@ -633,6 +646,7 @@ pub fn set_appearance_preferences(
     *state.icon_bar_style.lock().unwrap() = icon_bar_style.clone();
     *state.icon_bar_order.lock().unwrap() = icon_bar_order.clone();
     *state.border_effect.lock().unwrap() = border_effect.clone();
+    *state.theme.lock().unwrap() = selected_theme.clone();
     *state.border_custom_source.lock().unwrap() = border_custom_source.clone();
     *state.left_visual_mode.lock().unwrap() = left_visual_mode.clone();
     *state.left_visual_source.lock().unwrap() = left_visual_source.clone();
@@ -652,6 +666,7 @@ pub fn set_appearance_preferences(
                 "iconBarStyle": icon_bar_style,
                 "iconBarOrder": icon_bar_order,
                 "borderEffect": border_effect,
+                "theme": selected_theme,
                 "borderCustomSource": border_custom_source,
                 "leftVisualMode": left_visual_mode,
                 "leftVisualSource": left_visual_source,
@@ -948,11 +963,22 @@ mod tests {
         assert_eq!(normalized.len(), 1);
         assert_eq!(normalized[0].name, "first");
         assert_eq!(normalize_border_effect("klein"), "off");
-        for value in ["off", "aurora", "mono", "glass", "custom"] {
+        for value in ["off", "aurora", "mono"] {
             assert_eq!(normalize_border_effect(value), value);
         }
         assert!(source_exists("builtin:cat-wave", &[]));
         assert!(source_exists("builtin:dog-wave", &[]));
+    }
+
+    #[test]
+    fn themes_and_borders_migrate_independently() {
+        assert_eq!(super::normalize_theme("", "glass"), "glass");
+        assert_eq!(super::normalize_theme("", "aurora"), "dark");
+        assert_eq!(super::normalize_theme("glass", "mono"), "glass");
+        assert_eq!(super::normalize_theme("dark", "glass"), "dark");
+        assert_eq!(super::normalize_theme("invalid", "off"), "dark");
+        assert_eq!(normalize_border_effect("glass"), "off");
+        assert_eq!(normalize_border_effect("custom"), "off");
     }
 
     #[test]

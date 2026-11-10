@@ -131,7 +131,7 @@ pub(crate) fn sync_appearance(
         .appearance_initialized
         .load(Ordering::SeqCst)
         .then(|| *state.appearance.lock().unwrap());
-    let theme = app.state::<IslandState>().border_effect.lock().unwrap().clone();
+    let theme = app.state::<IslandState>().theme.lock().unwrap().clone();
     let appearance = tray_effects::apply(panel, previous, &theme);
     state.appearance_initialized.store(true, Ordering::SeqCst);
     *app.state::<TrayState>().appearance.lock().unwrap() = appearance;
