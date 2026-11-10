@@ -696,11 +696,12 @@ fn publish(app: &tauri::AppHandle) {
 }
 
 fn tray_menu_actions(mode: DisplayMode) -> Vec<(&'static str, &'static str)> {
-    let mut actions = vec![("capsule", "显示胶囊")];
-    if mode == DisplayMode::Capsule {
-        actions.push(("tray-mode", "切换至托盘态"));
-    }
-    actions
+    let switch = if mode == DisplayMode::Capsule {
+        ("tray-mode", "切换至托盘")
+    } else {
+        ("capsule", "切换至胶囊")
+    };
+    vec![("settings", "设置"), switch, ("quit", "退出")]
 }
 
 fn build_tray_menu(
@@ -711,10 +712,7 @@ fn build_tray_menu(
     for (id, label) in tray_menu_actions(mode) {
         menu = menu.item(&MenuItemBuilder::with_id(id, label).build(app)?);
     }
-    menu.item(&MenuItemBuilder::with_id("settings", "设置").build(app)?)
-        .separator()
-        .item(&MenuItemBuilder::with_id("quit", "退出").build(app)?)
-        .build()
+    menu.build()
 }
 
 fn is_tray_left_release(event: &TrayIconEvent) -> bool {
@@ -915,14 +913,11 @@ mod tests {
     }
     #[test]
     fn tray_mode_menu_does_not_offer_the_current_mode_again() {
-        assert!(!tray_menu_actions(DisplayMode::Tray)
-            .iter()
-            .any(|(id, _)| *id == "tray-mode"));
-        assert!(tray_menu_actions(DisplayMode::Tray)
-            .iter()
-            .any(|(id, _)| *id == "capsule"));
-        assert!(tray_menu_actions(DisplayMode::Capsule)
-            .iter()
-            .any(|(id, _)| *id == "tray-mode"));
+        assert_eq!(tray_menu_actions(DisplayMode::Tray), vec![
+            ("settings", "设置"), ("capsule", "切换至胶囊"), ("quit", "退出")
+        ]);
+        assert_eq!(tray_menu_actions(DisplayMode::Capsule), vec![
+            ("settings", "设置"), ("tray-mode", "切换至托盘"), ("quit", "退出")
+        ]);
     }
 }

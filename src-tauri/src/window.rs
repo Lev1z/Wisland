@@ -582,7 +582,7 @@ pub fn show_context_menu(app: tauri::AppHandle, window: tauri::WebviewWindow) {
         // 添加菜单项
         let _ = AppendMenuW(h_menu, MF_STRING, 1, windows::core::w!("收起"));
         let _ = AppendMenuW(h_menu, MF_STRING, 2, windows::core::w!("设置"));
-        let _ = AppendMenuW(h_menu, MF_STRING, 3, windows::core::w!("切换至托盘态"));
+        let _ = AppendMenuW(h_menu, MF_STRING, 3, windows::core::w!("切换至托盘"));
 
         // 显示菜单并跟踪选择（阻塞直到用户选择或取消）
         let cmd = TrackPopupMenu(
