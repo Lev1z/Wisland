@@ -47,7 +47,10 @@ const {chromium} = require('../target/tray-qa-tools/node_modules/playwright');
           await page.evaluate(()=>{document.body.classList.remove('minimized');document.getElementById('island-capsule').classList.remove('minimized');});
         }
         if (theme==='glass' && surface==='settings') {
-          assert.equal(await page.locator('.menu-prelayer-front').evaluate(e=>getComputedStyle(e).backgroundColor),'rgba(184, 184, 184, 0.17)','glass intro is neutral translucent gray');
+          const sidebarFill = await page.locator('.sidebar').evaluate(e=>getComputedStyle(e).backgroundColor);
+          for (const selector of ['.menu-prelayer-front','.menu-prelayer-back']) {
+            assert.equal(await page.locator(selector).evaluate(e=>getComputedStyle(e).backgroundColor),sidebarFill,'glass intro and resting sidebar share the same dark gray');
+          }
           await page.waitForTimeout(900);
           assert.equal(await page.locator('.menu-prelayers').evaluate(e=>getComputedStyle(e).visibility),'hidden','completed intro layer does not tint acrylic purple');
         }
