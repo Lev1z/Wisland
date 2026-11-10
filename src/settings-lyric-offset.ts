@@ -40,8 +40,18 @@ const state = {
 };
 
 function formatMs(ms: number): string {
-  if (ms > 0) return `+${ms} ms`;
-  return `${ms} ms`;
+  return `${ms > 0 ? "+" : ""}${ms / 1000} 秒`;
+}
+
+function playerName(appId: string): string {
+  const id = appId.toLowerCase();
+  const names: Record<string, string> = {
+    "cloudmusic.exe": "网易云音乐", "qqmusic.exe": "QQ 音乐",
+    "kugou": "酷狗音乐", "kugou.exe": "酷狗音乐", "汽水音乐": "汽水音乐",
+  };
+  if (id.startsWith("microsoft.zunemusic_")) return "Windows 媒体播放器";
+  if (id.startsWith("appleinc.applemusicwin_")) return "Apple Music";
+  return names[id] ?? appId;
 }
 
 function clampToRange(ms: number): number {
@@ -94,7 +104,8 @@ function buildRow(refs: Refs, entry: PlayerOffsetEntry): HTMLDivElement {
   const label = document.createElement("div");
   label.style.cssText = "display:flex;align-items:center;gap:8px;min-width:0;flex:1;";
   const name = document.createElement("span");
-  name.textContent = entry.app_id;
+  name.textContent = playerName(entry.app_id);
+  name.title = entry.app_id;
   name.style.cssText = "font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
   label.appendChild(name);
   if (state.activeAppId && entry.app_id === state.activeAppId) {
@@ -111,11 +122,11 @@ function buildRow(refs: Refs, entry: PlayerOffsetEntry): HTMLDivElement {
   const minusBtn = document.createElement("button");
   minusBtn.type = "button";
   minusBtn.className = "btn btn-small";
-  minusBtn.textContent = "− 0.5s";
+  minusBtn.textContent = `− ${state.stepMs / 1000} 秒`;
   const plusBtn = document.createElement("button");
   plusBtn.type = "button";
   plusBtn.className = "btn btn-small";
-  plusBtn.textContent = "+ 0.5s";
+  plusBtn.textContent = `+ ${state.stepMs / 1000} 秒`;
   const value = document.createElement("span");
   value.textContent = formatMs(entry.ms);
   value.style.cssText = "min-width:80px;text-align:center;font-variant-numeric:tabular-nums;";
@@ -144,7 +155,7 @@ function buildRow(refs: Refs, entry: PlayerOffsetEntry): HTMLDivElement {
         entry.ms = applied;
         value.textContent = formatMs(applied);
       }
-      setSubpageStatus(refs, `${entry.app_id}: ${formatMs(applied)}`);
+      setSubpageStatus(refs, `${playerName(entry.app_id)}：${formatMs(applied)}`);
     } catch (e) {
       entry.ms = prev;
       value.textContent = formatMs(prev);
@@ -164,7 +175,7 @@ function buildRow(refs: Refs, entry: PlayerOffsetEntry): HTMLDivElement {
   const delBtn = document.createElement("button");
   delBtn.type = "button";
   delBtn.className = "btn btn-small";
-  delBtn.textContent = "清除";
+  delBtn.textContent = "移除";
   delBtn.style.color = "var(--danger, #ff6f7f)";
   delBtn.title = "从列表移除该播放器的配置";
   delBtn.addEventListener("click", async () => {
@@ -173,7 +184,7 @@ function buildRow(refs: Refs, entry: PlayerOffsetEntry): HTMLDivElement {
       await invoke("delete_lyric_offset_player", { appId: entry.app_id });
       state.players = state.players.filter((p) => p.app_id !== entry.app_id);
       renderList(refs);
-      setSubpageStatus(refs, `${entry.app_id} 已清除`);
+      setSubpageStatus(refs, `${playerName(entry.app_id)} 已移除`);
     } catch (e) {
       setSubpageStatus(refs, `删除失败: ${String(e)}`, 4000);
     } finally {

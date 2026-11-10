@@ -42,6 +42,7 @@ const { chromium } = require('../target/tray-qa-tools/node_modules/playwright');
       await page.setViewportSize(size);
       for (const phase of ['idle','checking','current','available','downloading','verifying','installing','error']) {
         await page.evaluate(phase=>window.statusEvent({payload:{...window.updateFixtureStatus,phase,error:phase==='error'?'长错误'.repeat(300):null,checkedAt:1794300000}}),phase);
+        if (phase === 'idle') assert.equal(await page.locator('#update-message').textContent(), '点击检查更新');
         assert.ok(await page.locator('.update-card').evaluate(e=>e.getBoundingClientRect().height<=80 && e.scrollWidth<=e.clientWidth),'two compact rows across sizes and states');
         assert.ok(await page.locator('.update-card').evaluate(e=>e.getBoundingClientRect().top>=document.querySelector('.about-brand').getBoundingClientRect().bottom),'updater follows brand information');
       }
