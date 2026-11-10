@@ -5604,6 +5604,7 @@ dependencies = [
  "base64 0.22.1",
  "dirs 5.0.1",
  "lyrix",
+ "minisign-verify",
  "rusqlite",
  "semver",
  "serde",

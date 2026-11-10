@@ -1,0 +1,14 @@
+const fs = require('node:fs');
+const path = require('node:path');
+const assert = require('node:assert/strict');
+const version = require('../package.json').version;
+assert.match(version, /^\d+\.\d+\.\d+$/);
+const bundle = path.resolve(__dirname,'../src-tauri/target/release/bundle/nsis');
+const name = `Wisland_${version}_x64-setup.exe`;
+assert.ok(fs.statSync(path.join(bundle,name)).size > 0);
+const signature = fs.readFileSync(path.join(bundle,name+'.sig'),'utf8').trim();
+assert.ok(signature.length > 100, 'missing updater signature');
+const notesFile = path.resolve(__dirname,`../docs/releases/v${version}.md`);
+const manifest = {version,notes:fs.existsSync(notesFile)?fs.readFileSync(notesFile,'utf8'):`Wisland ${version}`,pub_date:new Date().toISOString(),platforms:{'windows-x86_64':{signature,url:`https://github.com/Lev1z/Wisland/releases/download/v${version}/${name}`}}};
+fs.writeFileSync(path.join(bundle,'latest.json'),JSON.stringify(manifest,null,2)+'\n');
+console.log('Created signed update manifest for '+version);

@@ -20,6 +20,7 @@ export async function initUpdater(): Promise<void> {
     if (dialog.open && next.phase !== "available") { dialog.close(); confirmed = null; }
   };
   const error = (value: unknown): void => { el("update-message").textContent = String(value); };
+  el("update-manual").addEventListener("click", () => { void invoke("open_update_release").catch(error); });
   check.addEventListener("click", () => { check.disabled = true; void invoke<Status>("check_update").then(render).catch(error).finally(() => { check.disabled = false; }); });
   auto.addEventListener("change", () => { auto.disabled = true; void invoke<Status>("set_auto_update_check", { enabled: auto.checked }).then(render).catch(e => { auto.checked = state?.autoCheck ?? true; error(e); }).finally(() => { auto.disabled = false; }); });
   install.addEventListener("click", () => {

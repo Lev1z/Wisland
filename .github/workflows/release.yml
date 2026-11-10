@@ -3,7 +3,7 @@ name: Release Tauri App
 on:
   push:
     tags:
-      - 'tauri-v*'
+      - 'v*'
 
 jobs:
   build-and-release:
@@ -32,26 +32,45 @@ jobs:
         run: npm ci
 
       - name: Build Tauri app
-        run: npm run tauri build
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          if ($env:GITHUB_REF_NAME -ne "v$version") { throw 'Tag/version mismatch' }
+          if (-not (Test-Path "docs/releases/$env:GITHUB_REF_NAME.md")) { throw 'Release notes are required' }
+          if (-not $env:TAURI_SIGNING_PRIVATE_KEY) { throw 'Configure signing secrets before publishing' }
+          npm run test:version
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          npm run tauri build -- --bundles nsis
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          node scripts/create-update-manifest.cjs
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $env:WISLAND_VERIFY_UPDATE_FILE = (Resolve-Path "src-tauri/target/release/bundle/nsis/Wisland_${version}_x64-setup.exe").Path
+          cargo test --manifest-path src-tauri/Cargo.toml --lib signed_installer_accepts_original_and_rejects_tampering -- --ignored
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
       - name: Extract version from tag
         id: version
         shell: bash
-        run: echo "VERSION=${GITHUB_REF_NAME#tauri-v}" >> $GITHUB_OUTPUT
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          name: "[Tauri] v${{ steps.version.outputs.VERSION }}"
-          body: |
-            ## 🎉 Dynamic Island for Windows - Tauri v${{ steps.version.outputs.VERSION }}
-
-            ### 📦 安装说明
-            - 下载 `.exe` 安装包（推荐）或 `.msi` 安装包
-            - 运行安装程序完成安装
+          name: "Wisland v${{ steps.version.outputs.VERSION }}"
+          body_path: docs/releases/${{ github.ref_name }}.md
           files: |
             src-tauri/target/release/bundle/nsis/*.exe
-            src-tauri/target/release/bundle/msi/*.msi
-          make_latest: true
-          draft: false
+            src-tauri/target/release/bundle/nsis/*.sig
+            src-tauri/target/release/bundle/nsis/latest.json
+          fail_on_unmatched_files: true
+          make_latest: false
+          draft: true
           prerelease: false
+      - name: Publish after complete asset upload
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit $env:GITHUB_REF_NAME --draft=false --latest --repo $env:GITHUB_REPOSITORY

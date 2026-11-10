@@ -16,7 +16,12 @@ impl Default for Status {
 struct Data { status: Status, candidate: Option<Update> }
 pub struct State(Mutex<Data>);
 fn now() -> u64 { SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() }
-fn prefs() -> std::path::PathBuf { dirs::config_dir().unwrap_or_default().join("wisland").join("updates.json") }
+fn prefs() -> std::path::PathBuf {
+    // Windows Known Folders ignore APPDATA overrides; native QA needs an explicit
+    // preference-only override. This does not change endpoints or trust keys.
+    std::env::var_os("WISLAND_UPDATE_CONFIG_DIR").map(std::path::PathBuf::from)
+        .unwrap_or_else(|| dirs::config_dir().unwrap_or_default().join("wisland")).join("updates.json")
+}
 fn save(s: &Status) -> Result<(), String> {
     let file = prefs(); std::fs::create_dir_all(file.parent().unwrap()).map_err(|e| e.to_string())?;
     // Persist only preference and check time, not candidate URLs or executable data.
@@ -62,6 +67,10 @@ pub fn set_auto_update_check(app: tauri::AppHandle, enabled: bool) -> Result<Sta
 #[tauri::command]
 pub async fn check_update(app: tauri::AppHandle) -> Result<Status, String> { check(app, false).await }
 #[tauri::command]
+pub fn open_update_release() -> Result<(), String> {
+    std::process::Command::new("explorer.exe").arg("https://github.com/Lev1z/Wisland/releases/latest").spawn().map(|_| ()).map_err(|e| format!("无法打开更新下载页：{e}"))
+}
+#[tauri::command]
 pub async fn install_update(app: tauri::AppHandle, window: tauri::WebviewWindow, confirmed_version: String) -> Result<(), String> {
     if window.label() != "settings" { return Err("请在设置中确认安装更新".into()); }
     let update = {
@@ -94,6 +103,20 @@ pub fn setup(app: &tauri::AppHandle) {
 }
 #[cfg(test)] mod tests {
     use super::*;
+    #[test]
+    #[ignore = "set WISLAND_VERIFY_UPDATE_FILE to this build's signed test installer"]
+    fn signed_installer_accepts_original_and_rejects_tampering() {
+        use base64::Engine;
+        let file = std::env::var("WISLAND_VERIFY_UPDATE_FILE").expect("explicit fixture path required");
+        let config: serde_json::Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let decode = |s: &str| String::from_utf8(base64::engine::general_purpose::STANDARD.decode(s.trim()).unwrap()).unwrap();
+        let key = minisign_verify::PublicKey::decode(&decode(config["plugins"]["updater"]["pubkey"].as_str().unwrap())).unwrap();
+        let signature = minisign_verify::Signature::decode(&decode(&std::fs::read_to_string(format!("{file}.sig")).unwrap())).unwrap();
+        let mut bytes = std::fs::read(file).unwrap();
+        key.verify(&bytes, &signature, true).unwrap();
+        bytes[0] ^= 1;
+        assert!(key.verify(&bytes, &signature, true).is_err());
+    }
     #[test] fn validates_stable_versions_and_exact_release_host() {
         assert!(allowed("0.2.3", "0.2.2", "https://github.com/Lev1z/Wisland/releases/download/v0.2.3/Wisland_0.2.3_x64-setup.exe"));
         for (v,u) in [("0.2.2","https://github.com/Lev1z/Wisland/releases/download/v0.2.2/Wisland_0.2.2_x64-setup.exe"),("0.2.3-beta.1","https://github.com/a.exe"),("0.2.3","https://github.com.evil/Lev1z/Wisland/releases/download/v0.2.3/Wisland_0.2.3_x64-setup.exe")] { assert!(!allowed(v,"0.2.2",u)); }

@@ -57,3 +57,6 @@ windows = { version = "0.61", features = [
     "Win32_System_Com"
 ] }
 winreg = "0.52"
+
+[dev-dependencies]
+minisign-verify = "=0.2.5"

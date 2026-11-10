@@ -20,7 +20,9 @@
 
 ## 可复现负载
 
-`node scripts/measure-runtime-perf.cjs <绝对 EXE 路径> [每场景秒数，默认 30]` 启动自己的实例。先退出用户实例，再串行测试旧版和新版，测量期间不运行编译和其他回归。脚本使用独立 `CODEX_HOME`、APPDATA、LOCALAPPDATA 和 WebView profile；不读取真实会话，不修改用户配置。调试接口只绑定 loopback，测完关闭自己创建的进程。产物与报告留在忽略的 `target/runtime-perf-*`。
+补充核对：Windows `dirs` 使用 Known Folders，APPDATA / LOCALAPPDATA 环境变量并未隔离所有应用偏好；历史性能测试实际沿用了本机应用偏好。`CODEX_HOME` 和显式 WebView profile 仍已隔离，新旧版本使用相同本机偏好。后续测试不应仅凭这些环境变量宣称全配置隔离。
+
+`node scripts/measure-runtime-perf.cjs <绝对 EXE 路径> [每场景秒数，默认 30]` 启动自己的实例。先退出用户实例，再串行测试旧版和新版，测量期间不运行编译和其他回归。脚本使用独立 `CODEX_HOME` 和 WebView profile，不读取真实会话；APPDATA / LOCALAPPDATA 也设为测试目录，但不能覆盖 Known Folders 读取的本机应用偏好。调试接口只绑定 loopback，测完关闭自己创建的进程。产物与报告留在忽略的 `target/runtime-perf-*`。
 
 固定 36 份会话文件，目标会话预置 50 回合、1,000 条事件记录（受产品 800 条保留上限约束），工具参数 1 KiB、结果 2 KiB。预热 10 秒后每 500ms 追加 2 KiB 助手文本。依次测隐藏、侧栏、Inspector，各场景读取进程树起止计数；CPU 按逻辑处理器数归一化。最终内存为每场景结束值，不是峰值。Inspector 阅读固定工具记录，追加发生在同一文件，测试无需在线模型。
 

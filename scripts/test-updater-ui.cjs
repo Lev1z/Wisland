@@ -9,6 +9,8 @@ const { chromium } = require('../target/tray-qa-tools/node_modules/playwright');
     await page.setContent(fs.readFileSync('settings.html','utf8').replace(/<script[\s\S]*?<\/script>/g,''));
     await page.addStyleTag({ content: fs.readFileSync('src/settings.css','utf8') });
     await page.evaluate(() => {
+      document.getElementById('settings-shell').classList.add('menu-open');
+      document.getElementById('page-title').textContent = '关于';
       document.querySelectorAll('.page').forEach(p=>p.classList.remove('active')); document.getElementById('page-about').classList.add('active');
       window.commands = []; window.updateFixtureStatus = { autoCheck:true,phase:'idle',version:null,notes:'',error:null,downloaded:0,total:null,checkedAt:0 };
       window.module = {exports:{}}; window.exports=window.module.exports;
@@ -17,6 +19,8 @@ const { chromium } = require('../target/tray-qa-tools/node_modules/playwright');
     await page.addScriptTag({ content:ts.transpileModule(fs.readFileSync('src/settings-updater.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText });
     await page.evaluate(()=>window.module.exports.initUpdater());
     assert.equal(await page.locator('#update-install').isVisible(),false);
+    await page.locator('#update-manual').click();
+    assert.ok(await page.evaluate(()=>window.commands.some(c=>c.command==='open_update_release')));
     await page.locator('#update-auto').uncheck();
     await page.evaluate(()=> { window.updateFixtureStatus={...window.updateFixtureStatus,phase:'available',version:'0.2.3',notes:'<script>bad()</script>\nRelease notes'}; window.statusEvent({payload:window.updateFixtureStatus}); });
     assert.equal(await page.locator('#update-notes script').count(),0);
@@ -30,6 +34,9 @@ const { chromium } = require('../target/tray-qa-tools/node_modules/playwright');
     assert.equal(await page.locator('#update-check').isDisabled(),true);
     await page.evaluate(()=>window.statusEvent({payload:{...window.updateFixtureStatus,phase:'error',error:'签名校验失败，未执行安装'}}));
     assert.ok((await page.locator('#update-message').textContent()).includes('签名校验失败'));
+    await page.waitForTimeout(800);
+    await page.locator('.content-body').evaluate(e=>e.scrollTop=0);
+    assert.equal(await page.locator('.content').evaluate(e=>getComputedStyle(e).opacity),'1');
     await page.screenshot({path:'target/updater-settings-qa.png'});
     console.log('PASS: update preferences / safe notes / explicit confirm and cancel / version binding / progress / failures');
   } finally { await browser.close(); }

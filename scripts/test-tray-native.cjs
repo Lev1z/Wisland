@@ -28,6 +28,10 @@ async function main() {
   if (process.argv.includes('--runtime')) {
     runtimeHome = path.resolve(__dirname, `../target/runtime-native-qa-${Date.now()}`);
     await fs.mkdir(path.join(runtimeHome, 'sessions'), { recursive: true });
+    await fs.mkdir(path.join(runtimeHome, 'roaming'), { recursive: true });
+    await fs.mkdir(path.join(runtimeHome, 'roaming/wisland'), { recursive: true });
+    await fs.writeFile(path.join(runtimeHome, 'roaming/wisland/settings.json'), JSON.stringify({ environment_check_version: 1 }));
+    await fs.writeFile(path.join(runtimeHome, 'roaming/wisland/updates.json'), JSON.stringify({ autoCheck: false }));
     runtimeFile = path.join(runtimeHome, `sessions/rollout-2026-11-09T12-30-00-${runtimeThreadId}.jsonl`);
     await fs.writeFile(path.join(runtimeHome, 'session_index.jsonl'), JSON.stringify({ id: runtimeThreadId, thread_name: 'Runtime 侧栏回归会话' }) + '\n');
     await fs.writeFile(runtimeFile, record('session_meta', { id: runtimeThreadId, history_mode: 'paginated', history_base: null })
@@ -43,7 +47,7 @@ async function main() {
   const child = spawn(path.resolve(__dirname, `../src-tauri/target/${profile}/wisland.exe`), [], {
     windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'], cwd: path.resolve(__dirname, '..'),
     env: { ...process.env,
-      ...(runtimeHome ? { CODEX_HOME: runtimeHome } : {}),
+      ...(runtimeHome ? { CODEX_HOME: runtimeHome, WISLAND_UPDATE_CONFIG_DIR: path.join(runtimeHome, 'roaming/wisland') } : {}),
       WEBVIEW2_USER_DATA_FOLDER: path.resolve(__dirname, '../target/tray-native-qa-profile'),
       WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-address=127.0.0.1 --remote-debugging-port=${port}`,
     },
@@ -287,6 +291,16 @@ async function main() {
     const initiallyFocused = await popup.evaluate(() => window.__TAURI__.window.getCurrentWindow().isFocused());
     await invoke('open_settings');
     const settingsPage = await until(() => pages().find(page => page.url().includes('/settings.html')), 'settings focus target');
+    if (runtimeHome) {
+      await settingsPage.waitForSelector('#update-auto', { state: 'attached' });
+      const updates = await invoke('get_update_status');
+      assert.equal(typeof updates.autoCheck, 'boolean');
+      const changed = await invoke('set_auto_update_check', { enabled: false });
+      assert.equal(changed.autoCheck, false);
+      const prefs = JSON.parse(await fs.readFile(path.join(runtimeHome, 'roaming/wisland/updates.json'), 'utf8'));
+      assert.equal(prefs.autoCheck, false, 'update preference is persisted only in the isolated test profile');
+      console.log('PASS: native updater status / preference persistence / no automatic install');
+    }
     await settingsPage.waitForFunction(version => {
       const labels = [...document.querySelectorAll('[data-app-version]')];
       return labels.length === 2 && labels.every(label => label.textContent === version);
