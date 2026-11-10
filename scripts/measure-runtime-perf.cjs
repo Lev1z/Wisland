@@ -1,5 +1,5 @@
 // Sequential, isolated native benchmark. Never attaches to a user's instance.
-// node scripts/measure-runtime-perf.cjs <absolute-exe> [seconds-per-case=30]
+// node scripts/measure-runtime-perf.cjs <absolute-exe> [seconds-per-case=30] [hidden|sidebar|inspector]
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const net = require('node:net');
@@ -20,6 +20,8 @@ async function main() {
   assert.ok(path.isAbsolute(binary));
   const seconds = Number(process.argv[3] ?? 30);
   assert.ok(seconds >= 10 && seconds <= 60);
+  const modes = process.argv[4] ? [process.argv[4]] : ['hidden', 'sidebar', 'inspector'];
+  assert.ok(modes.every(m => ['hidden', 'sidebar', 'inspector'].includes(m)));
   const root = await fs.mkdtemp(path.resolve(__dirname, '../target/runtime-perf-'));
   const home = path.join(root, 'codex');
   for (const dir of ['sessions', 'archived_sessions']) await fs.mkdir(path.join(home, dir), { recursive: true });
@@ -70,7 +72,7 @@ async function main() {
       const n = serial++;
       writing = writing.then(() => fs.appendFile(logfile, record('response_item', { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: `Live ${n}\n` + 'z'.repeat(2048) }] })));
     }, 500);
-    for (const mode of ['hidden', 'sidebar', 'inspector']) {
+    for (const mode of modes) {
       if (mode !== 'hidden') { await invoke('set_tray_expanded', { expanded: true }); await pause(1500); }
       if (mode === 'inspector') {
         await panel.locator('.event-row[data-kind="tool"]').first().click();
@@ -81,13 +83,16 @@ async function main() {
       const after = await sample(child.pid);
       const elapsed = (after.at - before.at) / 1000;
       const common = after.rows.filter(p => before.rows.some(q => q.id === p.id));
+      const stableProcessSet = common.length === before.rows.length && common.length === after.rows.length;
+      if (!stableProcessSet) console.warn('Process churn: CPU/I/O deltas cover common surviving processes only; do not treat this case as a strict whole-tree comparison.');
       const delta = field => common.reduce((sum, p) => sum + p[field] - before.rows.find(q => q.id === p.id)[field], 0);
       const sum = field => after.rows.reduce((total, p) => total + p[field], 0);
-      const result = { mode, seconds: elapsed, processCount: after.rows.length,
+      const result = { mode, seconds: elapsed, processCount: after.rows.length, stableProcessSet,
         cpuMachinePct: delta('cpu') / elapsed / after.cores * 100, cpuSeconds: delta('cpu'),
         privateWsMiB: sum('privateWS') / 1048576, wsMiB: sum('ws') / 1048576, commitMiB: sum('commit') / 1048576,
         readMiB: delta('read') / 1048576, writeMiB: delta('write') / 1048576,
-        visible: await panel.evaluate(() => window.__TAURI__.window.getCurrentWindow().isVisible()) };
+        visible: await panel.evaluate(() => window.__TAURI__.window.getCurrentWindow().isVisible()),
+        processes: common.map(p => ({ id: p.id, host: p.id === child.pid, cpuSeconds: p.cpu - before.rows.find(q => q.id === p.id).cpu, privateWsMiB: p.privateWS / 1048576 })) };
       reports.push(result); console.log(JSON.stringify(result));
     }
   } finally {
