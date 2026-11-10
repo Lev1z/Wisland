@@ -68,6 +68,12 @@ pub fn active(app: &tauri::AppHandle) -> bool {
     app.state::<IslandState>().tray_mode.load(Ordering::Relaxed)
 }
 
+// Use the animation target, not WS_VISIBLE (which stays true during exit).
+// Keep the initialized window and its composition warm-up unchanged.
+pub fn trajectory_active(app: &tauri::AppHandle) -> bool {
+    active(app) && app.state::<TrayState>().expanded.load(Ordering::Relaxed)
+}
+
 #[tauri::command]
 pub fn get_display_mode(app: tauri::AppHandle) -> DisplayMode {
     if active(&app) {

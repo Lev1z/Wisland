@@ -236,6 +236,16 @@ async function main() {
       assert.equal((await invoke('get_runtime_snapshot')).sessionId, initial.sessionId, 'pinned session must not switch');
       assert.notEqual((await invoke('select_runtime_session', { id: null })).sessionId, initial.sessionId, 'auto mode chooses latest active log');
       console.log('PASS: native JSONL append / split UTF-8 / results / model heading promotion / evidence-based completion / cross-source pending heading / logical thread dedup / history cutoffs / distinct forks / path rejection / pinned and automatic sessions');
+      await pause(700);
+      const hiddenRows = await popup.locator('.event-row').count();
+      await fs.appendFile(second, record('event_msg', { type: 'agent_message', message: 'hidden catch-up fixture' }));
+      await pause(3700);
+      assert.equal(await popup.locator('.event-row').count(), hiddenRows, 'hidden trajectory must not publish automatic updates');
+      await invoke('set_tray_expanded', { expanded: true });
+      await popup.waitForFunction(() => document.getElementById('trajectory-list').textContent.includes('hidden catch-up fixture'));
+      await invoke('set_tray_expanded', { expanded: false });
+      await until(async () => !(await visible()), 'catch-up host hidden');
+      console.log('PASS: hidden trajectory pauses and catches up on reopen');
     }
     // Stabilize the first account response before testing motion geometry. A
     // weekly-only account legitimately removes the initial placeholder 5h row.

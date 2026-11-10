@@ -859,7 +859,11 @@ pub struct RuntimeState(Mutex<Service>);
 pub async fn get_runtime_snapshot(app: tauri::AppHandle) -> Result<Snapshot, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<RuntimeState>();
-        let service = state.0.lock().map_err(|e| e.to_string())?;
+        let mut service = state.0.lock().map_err(|e| e.to_string())?;
+        // Explicit queries remain fresh even while automatic work is paused.
+        if service.tick() {
+            let _ = app.emit_to("codex-tray", "runtime-snapshot", &service.snapshot);
+        }
         Ok(service.snapshot.clone())
     })
     .await
@@ -950,16 +954,22 @@ pub fn setup(app: &tauri::AppHandle) {
         scanned: None,
     })));
     let app = app.clone();
-    std::thread::spawn(move || loop {
-        if crate::tray_mode::active(&app) {
+    std::thread::spawn(move || {
+      let mut was_visible = false;
+      loop {
+        let visible = crate::tray_mode::trajectory_active(&app);
+        if visible {
             let state = app.state::<RuntimeState>();
             if let Ok(mut service) = state.0.lock() {
+                if !was_visible { service.scanned = None; }
                 if service.tick() {
                     let _ = app.emit_to("codex-tray", "runtime-snapshot", service.snapshot.clone());
                 }
             };
         }
+        was_visible = visible;
         std::thread::sleep(Duration::from_millis(500));
+      }
     });
 }
 

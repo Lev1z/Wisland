@@ -39,6 +39,7 @@ function render(status: CodexStatus): void {
 }
 
 async function refresh(): Promise<void> {
+  if (document.hidden) return;
   try {
     render(await invoke<CodexStatus>("get_codex_status"));
   } catch (error) {
@@ -49,6 +50,7 @@ async function refresh(): Promise<void> {
 
 export function initCodexStatus(): void {
   void refresh();
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) void refresh(); });
   // 状态文件不会以亚秒级变化；降低 IPC 频率可减少常驻内存和 CPU 压力。
   window.setInterval(() => void refresh(), 2_000);
 }
