@@ -4,6 +4,7 @@ import { PhysicalPosition } from "@tauri-apps/api/dpi";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { initLyricOffset } from "./settings-lyric-offset";
+import { initUpdater } from "./settings-updater";
 
 type CustomAsset = { id: string; name: string; data_url: string };
 
@@ -711,6 +712,7 @@ const initialPage = new URLSearchParams(window.location.search).get("page");
 if (initialPage) activatePageById(initialPage);
 playMenuIntro();
 initLyricOffset();
+void initUpdater().catch(error => console.error("初始化更新功能失败", error));
 void loadSettings();
 void getVersion().then(version => {
   document.querySelectorAll<HTMLElement>("[data-app-version]").forEach(node => { node.textContent = version; });

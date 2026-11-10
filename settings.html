@@ -199,6 +199,17 @@
         </section>
 
         <section class="page" id="page-about">
+          <section class="update-card" aria-label="软件更新">
+            <h3>软件更新</h3>
+            <label><span>启动时自动检查更新（最多每天一次）</span><input id="update-auto" type="checkbox" class="toggle" /></label>
+            <p class="hint">只检查，不自动下载或安装。首次使用需手动安装带更新功能的版本。</p>
+            <p id="update-message" role="status">正在读取更新状态…</p>
+            <small id="update-checked"></small>
+            <progress id="update-progress" hidden></progress>
+            <div class="button-row"><button id="update-check" class="secondary-button" type="button">立即检查</button><button id="update-install" class="primary-button" type="button" hidden>下载并安装…</button></div>
+            <pre id="update-notes" hidden></pre>
+          </section>
+          <dialog id="update-confirm"><h3>确认更新</h3><p id="update-confirm-text"></p><div class="button-row"><button id="update-cancel" class="secondary-button" type="button">暂不更新</button><button id="update-confirm-install" class="primary-button" type="button">确认下载并安装</button></div></dialog>
           <div class="empty-state">
             <img class="brand-mark large" src="/src/assets/wisland-icon.png" alt="" /><h3>Wisland <span data-app-version>0.2.2</span></h3>
             <button id="open-github-profile" class="github-profile-link" type="button" aria-label="打开 Lev1z 的 GitHub 主页">
