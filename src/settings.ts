@@ -5,6 +5,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { initLyricOffset } from "./settings-lyric-offset";
 import { initUpdater } from "./settings-updater";
+import { initTheme } from "./theme";
 
 type CustomAsset = { id: string; name: string; data_url: string };
 
@@ -48,7 +49,7 @@ const pageMeta: Record<string, { title: string; description: string }> = {
   music: { title: "音乐", description: "歌词校准与播放器。" },
   codex: { title: "Codex", description: "连接任务状态 Hooks。" },
   obsidian: { title: "Obsidian", description: "设置随手记写入位置。" },
-  custom: { title: "自定义", description: "左右动图与动态边框方案。" },
+  custom: { title: "自定义", description: "胶囊图标与全局主题。" },
   behavior: { title: "行为", description: "自动隐藏、进程规则与诊断。" },
   about: { title: "关于", description: "版本与更新。" },
 };
@@ -706,6 +707,7 @@ void listen<string>("settings-page-open", (event) => activatePageById(event.payl
 const initialPage = new URLSearchParams(window.location.search).get("page");
 if (initialPage) activatePageById(initialPage);
 playMenuIntro();
+initTheme("settings");
 initLyricOffset();
 void initUpdater().catch(error => console.error("初始化更新功能失败", error));
 void loadSettings();

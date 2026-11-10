@@ -14,6 +14,7 @@ mod window;
 mod display;
 mod runtime;
 mod updater;
+mod theme;
 
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -56,6 +57,7 @@ const PRIVACY_POLL_MS: u64 = 1200;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(theme::ThemeState::default())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             updater::get_update_status, updater::set_auto_update_check, updater::check_update, updater::install_update, updater::open_update_release,
@@ -71,6 +73,7 @@ pub fn run() {
             tray_mode::set_tray_expanded, tray_mode::refresh_tray_quota,
             tray_mode::toggle_tray_expanded,
             tray_mode::get_tray_appearance,
+            theme::get_window_theme, theme::sync_capsule_theme_clip,
             tray_mode::get_tray_geometry,
             runtime::get_runtime_snapshot, runtime::select_runtime_session, runtime::get_runtime_event,
             settings::open_github_profile,

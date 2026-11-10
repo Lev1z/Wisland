@@ -223,7 +223,7 @@ fn default_border_effect() -> String {
 
 fn normalize_border_effect(value: &str) -> String {
     match value.trim() {
-        "aurora" | "mono" | "custom" => value.trim().to_string(),
+        "aurora" | "mono" | "custom" | "glass" => value.trim().to_string(),
         _ => default_border_effect(),
     }
 }
@@ -354,6 +354,10 @@ impl Default for SettingsData {
 }
 
 pub(crate) fn get_settings_path() -> PathBuf {
+    if let Some(path) = std::env::var_os("WISLAND_SETTINGS_CONFIG_DIR").map(PathBuf::from).filter(|p| p.is_absolute()) {
+        let _ = fs::create_dir_all(&path);
+        return path.join("settings.json");
+    }
     let mut path = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
     path.push("wisland");
     let _ = fs::create_dir_all(&path);
@@ -498,7 +502,9 @@ fn open_settings_window(app: tauri::AppHandle, page: Option<String>) {
             .title("Wisland 设置")
             .inner_size(960.0, 620.0)
             .min_inner_size(760.0, 500.0)
-            .background_color(tauri::window::Color(13, 13, 13, 255))
+            .transparent(true)
+            .visible(false)
+            .background_color(tauri::window::Color(0, 0, 0, 0))
             .decorations(false)
             .resizable(true)
             .center();
@@ -506,8 +512,17 @@ fn open_settings_window(app: tauri::AppHandle, page: Option<String>) {
     let result = tauri::image::Image::from_bytes(include_bytes!("../icons/icon.png"))
         .and_then(|icon| builder.icon(icon))
         .and_then(|builder| builder.build());
-    if let Err(error) = result {
-        crate::logger::error("Settings", &format!("无法打开设置窗口：{error}"));
+    match result {
+        Ok(window) => {
+            let handle = app.clone();
+            let _ = app.run_on_main_thread(move || {
+                crate::theme::forget_window(&handle, "settings");
+                crate::theme::sync_window(&handle, &window);
+                let _ = window.show();
+                let _ = window.set_focus();
+            });
+        }
+        Err(error) => crate::logger::error("Settings", &format!("无法打开设置窗口：{error}")),
     }
 }
 
@@ -627,9 +642,9 @@ pub fn set_appearance_preferences(
     *state.border_assets.lock().unwrap() = border_assets.clone();
     state
         .rainbow_border
-        .store(border_effect != "off", Ordering::Relaxed);
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.emit(
+        .store(matches!(border_effect.as_str(), "aurora" | "mono" | "custom"), Ordering::Relaxed);
+    {
+        let _ = app.emit(
             "appearance-changed",
             serde_json::json!({
                 "opacity": opacity,
@@ -933,6 +948,9 @@ mod tests {
         assert_eq!(normalized.len(), 1);
         assert_eq!(normalized[0].name, "first");
         assert_eq!(normalize_border_effect("klein"), "off");
+        for value in ["off", "aurora", "mono", "glass", "custom"] {
+            assert_eq!(normalize_border_effect(value), value);
+        }
         assert!(source_exists("builtin:cat-wave", &[]));
         assert!(source_exists("builtin:dog-wave", &[]));
     }

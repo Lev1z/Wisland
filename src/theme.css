@@ -1,0 +1,46 @@
+/* Shared surface treatment only: existing layout and motion rules stay intact. */
+:root[data-wisland-theme]:not([data-wisland-theme="glass"]) { color-scheme: dark; }
+:root[data-surface="sidebar"][data-wisland-theme]:not([data-wisland-theme="glass"]) {
+  --surface: #111; --text: #f1f2f4; --muted: #adb8c9; --border: #ffffff22; --track: #353a44; --hover: #ffffff10; --accent: #98b8e8;
+}
+:root[data-surface="sidebar"][data-wisland-theme]:not([data-wisland-theme="glass"]) .details { background: #111; }
+
+/* Match the capsule's established border gradients, opacity and rotation speed. */
+@property --theme-angle { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+@keyframes wisland-theme-border { to { --theme-angle: 360deg; } }
+:root[data-surface="settings"] body::after,
+:root[data-surface="sidebar"] .details::after {
+  content: ""; position: fixed; inset: 0; z-index: 100; padding: 2px; border-radius: 8px; pointer-events: none;
+  background: transparent; opacity: 0;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+}
+:root[data-wisland-theme="aurora"][data-surface="settings"] body::after,
+:root[data-wisland-theme="aurora"][data-surface="sidebar"] .details::after {
+  opacity: .9; background: conic-gradient(from var(--theme-angle), #70e6ff, #9b7cff, #ff72b5, #ffd56b, #70e6ff);
+  animation: wisland-theme-border 4s linear infinite;
+}
+:root[data-wisland-theme="mono"][data-surface="settings"] body::after,
+:root[data-wisland-theme="mono"][data-surface="sidebar"] .details::after {
+  opacity: .72; background: conic-gradient(from var(--theme-angle), #ffffff14, #fff, #ffffff14 38%);
+  animation: wisland-theme-border 6s linear infinite;
+}
+:root[data-wisland-theme="custom"][data-surface="settings"] body::after,
+:root[data-wisland-theme="custom"][data-surface="sidebar"] .details::after {
+  opacity: .9; background: #002fa7 var(--theme-custom-image, none) center / cover;
+}
+
+/* Native DWM supplies the blur. CSS stays opaque when native acrylic is unavailable. */
+:root[data-surface="capsule"][data-wisland-theme="glass"] #island-capsule { background: #282828; }
+:root[data-surface="capsule"][data-wisland-theme="glass"][data-acrylic="true"] #island-capsule { background: #15151538; box-shadow: inset 0 0 0 1px #ffffff18; }
+:root[data-surface="settings"][data-wisland-theme="glass"][data-acrylic="true"],
+:root[data-surface="settings"][data-wisland-theme="glass"][data-acrylic="true"] body,
+:root[data-surface="settings"][data-wisland-theme="glass"][data-acrylic="true"] .settings-shell { background: transparent; }
+:root[data-surface="settings"][data-wisland-theme="glass"][data-acrylic="true"] .window-titlebar,
+:root[data-surface="settings"][data-wisland-theme="glass"][data-acrylic="true"] .sidebar { background: #10101050; }
+:root[data-surface="settings"][data-wisland-theme="glass"][data-acrylic="true"] .content { background: transparent; }
+:root[data-surface="settings"][data-wisland-theme="glass"][data-acrylic="true"] :is(.setting-group, .about-card) { background: #18181880; }
+/* Intro layers are opaque behind the old sidebar. Retire them only after the
+   unchanged entrance has finished, so glass does not retain a purple underlay. */
+:root[data-surface="settings"][data-wisland-theme="glass"][data-acrylic="true"] .menu-open .menu-prelayers { visibility: hidden; transition: visibility 0s .85s; }
+.effect-glass { border: 1px solid #ffffff55; background: linear-gradient(135deg, #ffffff44, #ffffff0a); box-shadow: inset 0 0 10px #ffffff14; }

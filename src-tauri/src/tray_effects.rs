@@ -1,4 +1,4 @@
-//! Native effects are restricted to the transient Codex tray window.
+//! Shared native material; sidebar clipping and motion remain managed separately.
 use serde::Serialize;
 use std::mem::{size_of, size_of_val};
 use windows::core::BOOL;
@@ -220,7 +220,7 @@ pub fn is_foreground(panel: &tauri::WebviewWindow) -> bool {
         .is_ok_and(|handle| unsafe { GetForegroundWindow() == HWND(handle.0) })
 }
 
-pub fn apply(panel: &tauri::WebviewWindow, previous: Option<Appearance>) -> Appearance {
+pub fn apply(panel: &tauri::WebviewWindow, previous: Option<Appearance>, theme: &str) -> Appearance {
     let personalize = RegKey::predef(HKEY_CURRENT_USER)
         .open_subkey(r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize")
         .ok();
@@ -229,11 +229,6 @@ pub fn apply(panel: &tauri::WebviewWindow, previous: Option<Appearance>) -> Appe
         .and_then(|key| key.get_value::<u32, _>("EnableTransparency").ok())
         .unwrap_or(1)
         != 0;
-    let dark = personalize
-        .as_ref()
-        .and_then(|key| key.get_value::<u32, _>("AppsUseLightTheme").ok())
-        .unwrap_or(1)
-        == 0;
     let mut contrast = HIGHCONTRASTW {
         cbSize: size_of::<HIGHCONTRASTW>() as u32,
         ..Default::default()
@@ -256,7 +251,8 @@ pub fn apply(panel: &tauri::WebviewWindow, previous: Option<Appearance>) -> Appe
         let _ = GetSystemPowerStatus(&mut power);
     }
     let high_contrast = contrast.dwFlags.contains(HCF_HIGHCONTRASTON);
-    let requested = allow_acrylic(transparency, high_contrast, power.SystemStatusFlag == 1);
+    let dark = true; // All Wisland surfaces share the same dark theme palette.
+    let requested = theme == "glass" && allow_acrylic(transparency, high_contrast, power.SystemStatusFlag == 1);
     let mut result = Appearance {
         acrylic: false,
         dark,
@@ -331,6 +327,9 @@ pub fn apply(panel: &tauri::WebviewWindow, previous: Option<Appearance>) -> Appe
                     cyBottomHeight: -1,
                 };
                 result.acrylic = DwmExtendFrameIntoClientArea(hwnd, &margins).is_ok();
+            } else {
+                // Remove the full-client glass frame when switching back to opaque.
+                let _ = DwmExtendFrameIntoClientArea(hwnd, &MARGINS::default());
             }
         }
     }

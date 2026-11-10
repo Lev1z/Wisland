@@ -122,7 +122,7 @@ pub fn get_tray_geometry(app: tauri::AppHandle) -> Result<(i32, i32, i32, i32), 
     ))
 }
 
-fn sync_appearance(
+pub(crate) fn sync_appearance(
     app: &tauri::AppHandle,
     panel: &tauri::WebviewWindow,
 ) -> tray_effects::Appearance {
@@ -131,7 +131,8 @@ fn sync_appearance(
         .appearance_initialized
         .load(Ordering::SeqCst)
         .then(|| *state.appearance.lock().unwrap());
-    let appearance = tray_effects::apply(panel, previous);
+    let theme = app.state::<IslandState>().border_effect.lock().unwrap().clone();
+    let appearance = tray_effects::apply(panel, previous, &theme);
     state.appearance_initialized.store(true, Ordering::SeqCst);
     *app.state::<TrayState>().appearance.lock().unwrap() = appearance;
     let _ = panel.emit("tray-appearance", appearance);

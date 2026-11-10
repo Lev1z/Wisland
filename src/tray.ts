@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { initRuntime, closeInspector, closeSessionPicker } from "./runtime";
+import { initTheme } from "./theme";
 
 type QuotaWindow = { remainingPercent: number; resetsAt: number | null };
 type Snapshot = {
@@ -121,5 +122,6 @@ async function init(): Promise<void> {
   render(await invoke<Snapshot>("get_tray_snapshot"));
 }
 void init().catch(console.error);
+initTheme("sidebar");
 void initRuntime().catch(error => { el("runtime-notice").textContent = `日志连接失败：${String(error)}`; });
 window.setInterval(() => { if (snapshot) render(snapshot); }, 60_000);
