@@ -13,6 +13,7 @@ mod tray_effects;
 mod window;
 mod display;
 mod runtime;
+mod updater;
 
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -55,7 +56,9 @@ const PRIVACY_POLL_MS: u64 = 1200;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
+            updater::get_update_status, updater::set_auto_update_check, updater::check_update, updater::install_update,
             window::start_drag, window::end_drag, window::drag_move,
             window::dismiss_island, window::set_current_view, window::set_interacting,
             window::get_is_expanded, window::toggle_capsule_pin,
@@ -104,6 +107,7 @@ pub fn run() {
             logger::get_log_level, logger::set_log_level,
         ])
         .setup(|app| {
+            updater::setup(app.handle());
             let window = app.get_webview_window("main").unwrap();
             // Explicit WM_SETICON data keeps Task Manager from reusing the former Eisland icon.
             window.set_icon(Image::from_bytes(include_bytes!("../icons/icon.png"))?)?;
