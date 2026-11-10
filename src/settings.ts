@@ -45,12 +45,12 @@ const viewLabels: Record<ViewId, string> = {
 
 const pageMeta: Record<string, { title: string; description: string }> = {
   general: { title: "常规", description: "基础外观、启动方式与导航顺序。" },
-  music: { title: "音乐", description: "始终保留歌曲信息与歌词，并按播放器校准时间。" },
+  music: { title: "音乐", description: "歌词校准与播放器。" },
   codex: { title: "Codex", description: "连接任务状态 Hooks。" },
   obsidian: { title: "Obsidian", description: "设置随手记写入位置。" },
   custom: { title: "自定义", description: "左右动图与动态边框方案。" },
   behavior: { title: "行为", description: "自动隐藏、进程规则与诊断。" },
-  about: { title: "关于", description: "版本与项目边界。" },
+  about: { title: "关于", description: "版本与更新。" },
 };
 
 function element<T extends HTMLElement>(id: string): T {
@@ -71,7 +71,7 @@ let currentDisplayMode: "capsule" | "tray" = "capsule";
 
 function renderDisplayMode(mode: "capsule" | "tray"): void {
   currentDisplayMode = mode;
-  element("current-display-mode").textContent = mode === "tray" ? "托盘态 · Windows 系统托盘图标" : "胶囊态 · 桌面胶囊";
+  element("current-display-mode").textContent = mode === "tray" ? "当前：托盘态" : "当前：胶囊态";
   switchDisplayMode.textContent = mode === "tray" ? "显示胶囊" : "切换至托盘";
   switchDisplayMode.disabled = false;
 }
@@ -176,10 +176,7 @@ function renderIconOrder(): void {
     const name = document.createElement("span");
     name.textContent = viewLabels[view];
     label.append(handle, number, name);
-    const hint = document.createElement("span");
-    hint.className = "drag-copy";
-    hint.textContent = "拖拽排序";
-    row.append(label, hint);
+    row.append(label);
     row.addEventListener("mousedown", (event) => {
       if (event.button !== 0) return;
       event.preventDefault();
@@ -245,7 +242,7 @@ function renderVisualOptions(side: VisualSide): void {
   const nativePreview = document.createElement("i");
   nativePreview.className = "visual-native-preview";
   nativePreview.textContent = side === "left" ? "%" : "●";
-  native.append(nativePreview, visualCopy(side === "left" ? "Codex Quota" : "Status Light", "Wisland default"));
+  native.append(nativePreview, visualCopy(side === "left" ? "额度环" : "状态灯"));
   native.addEventListener("click", () => {
     setVisualState(side, side === "left" ? "codex" : "status", state.source);
     renderVisualOptions(side);
@@ -261,7 +258,7 @@ function renderVisualOptions(side: VisualSide): void {
     const preview = document.createElement("img");
     preview.alt = "";
     preview.src = builtin.source;
-    button.append(preview, visualCopy(builtin.name, "Wisland built-in"));
+    button.append(preview, visualCopy(builtin.name));
     button.addEventListener("click", () => {
       setVisualState(side, "custom", `builtin:${builtin.id}`);
       renderVisualOptions(side);
@@ -280,7 +277,7 @@ function renderVisualOptions(side: VisualSide): void {
     const preview = document.createElement("img");
     preview.alt = "";
     preview.src = asset.data_url;
-    button.append(preview, visualCopy(asset.name || "未命名素材", "Imported animation"));
+    button.append(preview, visualCopy(asset.name || "未命名素材"));
     button.addEventListener("click", () => {
       setVisualState(side, "custom", `asset:${asset.id}`);
       renderVisualOptions(side);
@@ -299,13 +296,11 @@ function renderVisualOptions(side: VisualSide): void {
   updateAssetCounters();
 }
 
-function visualCopy(name: string, detail: string): HTMLSpanElement {
+function visualCopy(name: string): HTMLSpanElement {
   const copy = document.createElement("span");
   const strong = document.createElement("strong");
   strong.textContent = name;
-  const small = document.createElement("small");
-  small.textContent = detail;
-  copy.append(strong, small);
+  copy.append(strong);
   return copy;
 }
 
@@ -340,7 +335,7 @@ function renderBorderEffects(): void {
     const preview = document.createElement("img");
     preview.alt = "";
     preview.src = asset.data_url;
-    button.append(preview, visualCopy(asset.name || "未命名边框", "Custom border"));
+    button.append(preview, visualCopy(asset.name || "未命名边框"));
     button.addEventListener("click", () => {
       borderEffect = "custom";
       borderCustomSource = `asset:${asset.id}`;
@@ -369,12 +364,12 @@ function renderBorderEffects(): void {
 }
 
 function updateAssetCounters(): void {
-  const visualText = visualAssets.length ? `素材库：${visualAssets.length} 个` : "可连续导入多个素材";
+  const visualText = visualAssets.length ? `素材库：${visualAssets.length} 个` : "";
   element<HTMLElement>("left-import-name").textContent = visualText;
   element<HTMLElement>("right-import-name").textContent = visualText;
   element<HTMLElement>("border-import-name").textContent = borderAssets.length
     ? `边框素材：${borderAssets.length} 个`
-    : "可保存并切换多个边框素材";
+    : "";
 }
 
 async function readImageFile(file: File): Promise<string> {
@@ -419,10 +414,10 @@ function wireImageImport(side: VisualSide): void {
 
 function renderCodexStatus(value: CodexStatus): void {
   const labels: Record<CodexStatus["phase"], string> = {
-    idle: "等待首次任务",
-    running: "正在运行",
-    completed: "最近已完成",
-    failed: "最近异常",
+    idle: "空闲",
+    running: "执行中",
+    completed: "已完成",
+    failed: "异常",
     stale: "状态已过期",
   };
   codexHookState.textContent = labels[value.phase];

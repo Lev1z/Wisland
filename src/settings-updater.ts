@@ -13,7 +13,7 @@ export async function initUpdater(): Promise<void> {
     check.disabled = busy; check.hidden = next.phase === "available"; install.hidden = next.phase !== "available";
     const labels: Record<string, string> = { idle: "尚未检查更新", checking: "正在检查更新…", current: "当前已是最新稳定版本", available: `发现新版本 ${next.version ?? ""}`, downloading: "正在下载更新…", verifying: "正在校验更新签名…", installing: "正在启动安装程序，Wisland 将退出…", error: "检查或更新失败" };
     const percent = next.total && next.total > 0 ? ` ${Math.min(100, Math.floor(next.downloaded / next.total * 100))}%` : "";
-    el("update-message").textContent = next.error ? "更新失败 · 查看详情" : next.phase === "downloading" ? `下载中${percent}` : labels[next.phase] ?? "更新状态未知";
+    el("update-message").textContent = next.error ? "更新失败 · 查看详情" : next.phase === "downloading" ? `下载中${percent}` : next.phase === "idle" && next.checkedAt ? "点击检查更新" : labels[next.phase] ?? "更新状态未知";
     el("update-message").title = next.error ?? "查看更新说明与详情";
     el("update-detail-status").textContent = next.error ?? labels[next.phase] ?? "更新状态未知";
     el("update-notes").textContent = next.notes;
