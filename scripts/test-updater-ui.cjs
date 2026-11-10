@@ -33,7 +33,21 @@ const { chromium } = require('../target/tray-qa-tools/node_modules/playwright');
     assert.equal(await page.locator('#update-progress').getAttribute('value'),'25');
     assert.equal(await page.locator('#update-check').isDisabled(),true);
     await page.evaluate(()=>window.statusEvent({payload:{...window.updateFixtureStatus,phase:'error',error:'签名校验失败，未执行安装'}}));
-    assert.ok((await page.locator('#update-message').textContent()).includes('签名校验失败'));
+    assert.ok((await page.locator('#update-message').textContent()).includes('查看详情'));
+    await page.locator('#update-message').click();
+    assert.ok((await page.locator('#update-detail-status').textContent()).includes('签名校验失败'));
+    assert.equal(await page.locator('#update-notes script').count(),0);
+    await page.locator('#update-details-close').click();
+    for (const size of [{width:760,height:500},{width:960,height:620},{width:1440,height:900}]) {
+      await page.setViewportSize(size);
+      for (const phase of ['idle','checking','current','available','downloading','verifying','installing','error']) {
+        await page.evaluate(phase=>window.statusEvent({payload:{...window.updateFixtureStatus,phase,error:phase==='error'?'长错误'.repeat(300):null,checkedAt:1794300000}}),phase);
+        assert.ok(await page.locator('.update-card').evaluate(e=>e.getBoundingClientRect().height<=80 && e.scrollWidth<=e.clientWidth),'two compact rows across sizes and states');
+        assert.ok(await page.locator('.update-card').evaluate(e=>e.getBoundingClientRect().top>=document.querySelector('.about-brand').getBoundingClientRect().bottom),'updater follows brand information');
+      }
+    }
+    await page.setViewportSize({width:960,height:620});
+    await page.evaluate(()=>window.statusEvent({payload:{...window.updateFixtureStatus,phase:'current',error:null,notes:'',checkedAt:Math.floor(Date.now()/1000)}}));
     await page.waitForTimeout(800);
     await page.locator('.content-body').evaluate(e=>e.scrollTop=0);
     assert.equal(await page.locator('.content').evaluate(e=>getComputedStyle(e).opacity),'1');
