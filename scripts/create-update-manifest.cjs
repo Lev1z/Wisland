@@ -1,6 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
+const { createHash } = require('node:crypto');
 const version = require('../package.json').version;
 assert.match(version, /^\d+\.\d+\.\d+$/);
 const bundle = path.resolve(__dirname,'../src-tauri/target/release/bundle/nsis');
@@ -11,4 +12,8 @@ assert.ok(signature.length > 100, 'missing updater signature');
 const notesFile = path.resolve(__dirname,`../docs/releases/v${version}.md`);
 const manifest = {version,notes:fs.existsSync(notesFile)?fs.readFileSync(notesFile,'utf8'):`Wisland ${version}`,pub_date:new Date().toISOString(),platforms:{'windows-x86_64':{signature,url:`https://github.com/Lev1z/Wisland/releases/download/v${version}/${name}`}}};
 fs.writeFileSync(path.join(bundle,'latest.json'),JSON.stringify(manifest,null,2)+'\n');
+const sums = [name, name+'.sig', 'latest.json'].map(file =>
+  `${createHash('sha256').update(fs.readFileSync(path.join(bundle,file))).digest('hex')}  ${file}`
+).join('\n')+'\n';
+fs.writeFileSync(path.join(bundle,'SHA256SUMS.txt'),sums);
 console.log('Created signed update manifest for '+version);

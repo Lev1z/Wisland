@@ -6,7 +6,26 @@ on:
       - 'v*'
 
 jobs:
+  signing_configuration:
+    runs-on: ubuntu-latest
+    outputs:
+      enabled: ${{ steps.signing.outputs.enabled }}
+    steps:
+      - name: Check cloud signing availability
+        id: signing
+        shell: bash
+        env:
+          SIGNING_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [ -n "$SIGNING_KEY" ]; then
+            echo 'enabled=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'enabled=false' >> "$GITHUB_OUTPUT"
+            echo '::notice::Cloud signing is not configured; publish locally signed assets instead.'
+          fi
   build-and-release:
+    needs: signing_configuration
+    if: needs.signing_configuration.outputs.enabled == 'true'
     runs-on: windows-latest
     permissions:
       contents: write
@@ -65,6 +84,7 @@ jobs:
             src-tauri/target/release/bundle/nsis/*.exe
             src-tauri/target/release/bundle/nsis/*.sig
             src-tauri/target/release/bundle/nsis/latest.json
+            src-tauri/target/release/bundle/nsis/SHA256SUMS.txt
           fail_on_unmatched_files: true
           make_latest: false
           draft: true

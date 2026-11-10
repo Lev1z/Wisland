@@ -1,4 +1,10 @@
-# Codex Runtime 侧栏（v0.2.2）
+# Codex Runtime 侧栏（v0.2.3）
+
+## 日志路径定位
+
+Wisland 启动时优先读取自身进程继承的 `CODEX_HOME`；未设置时使用当前用户目录下的 `.codex`。自动扫描其中的 `sessions` 与 `archived_sessions`，读取 `session_index.jsonl` 和自动发现的 `state_*.sqlite` 映射名称、当前日志与分支，不固定用户名或项目路径。
+
+若 Codex 使用自定义目录，Wisland 需要继承相同的 `CODEX_HOME`，修改环境变量后需重启 Wisland。目前不全盘搜索，也没有手动目录选择器。事件按已知 JSONL 结构规则解析，不调用模型分析日志；日志结构变化时需要适配。
 
 ## v0.2.2 改进
 

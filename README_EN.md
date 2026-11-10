@@ -27,7 +27,8 @@ Wisland presents Codex status and quota, media information, Obsidian notes, and 
 - **Music, lyrics, and controls** — read track metadata, artwork, progress, and playback state from Windows SMTC, with playback controls, volume, album-colored waveforms, and per-player lyric timing.
 - **Obsidian quick notes** — append notes, tasks, and journal entries to a selected Vault and manage today's entries from the capsule.
 - **Temporary file tray** — keep references to dropped files and drag them out or open them later without copying or modifying the originals.
-- **Flexible navigation and appearance** — choose between a classic icon bar and an option wheel, reorder pages, and customize scale, opacity, borders, images, and GIFs.
+- **Flexible navigation and appearance** — choose navigation, page order, scale, opacity, and capsule image/GIF assets. Dark/glass themes and rainbow/white borders are independent and apply across the capsule, settings, and sidebar.
+- **Software updates** — check automatically at startup or manually from About; download only after confirmation and verify the updater signature before launching the installer.
 - **Desktop behavior** — pin the expanded capsule with the middle mouse button, collapse it into a top bar, configure process/full-screen exclusions, start with Windows, and use the system tray.
 - **Environment check** — verify WebView2, Codex Desktop, Codex CLI, Hooks, media services, and Obsidian on first launch, with contextual repair actions.
 
@@ -44,6 +45,14 @@ The installer is recommended over copying the standalone `Wisland.exe` from a bu
 - Optional: Codex Desktop and Codex CLI for status and quota features
 - Optional: a media player that exposes Windows SMTC sessions
 - Optional: Obsidian for quick notes
+
+### v0.2.3 highlights
+
+- Adds automatic update checks with explicit installation confirmation and signed updater assets. Failures open a themed dialog with a manual-download fallback.
+- Separates theme and border settings across all surfaces; removes custom animated-border import while keeping capsule image/GIF assets.
+- Uses a rounded Windows Composition visual for capsule glass instead of tinting its rectangular host. Prevents stacked tint from darkening the settings entrance animation.
+- Simplifies settings copy and button hierarchy, shows friendly player names, aligns option cards, and makes context menus reflect the current display mode.
+- [Full release notes (Chinese)](docs/releases/v0.2.3.md) · [Theme implementation (Chinese)](docs/themes.md) · [Development storage cleanup (Chinese)](docs/development-storage.md).
 
 ### v0.2.2 highlights
 
