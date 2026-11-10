@@ -349,7 +349,7 @@ impl ModelView {
                 "note": "派生阅读标题，不是 Codex 请求开始事件",
                 "source_event_ids": rows.iter().map(|i| &events[*i].id).collect::<Vec<_>>() } },
                 "content": header.summary, "byteOffset": events[first].detail["byteOffset"],
-                "rolloutId": events[first].detail["rolloutId"], "modelAssociation": { "method": "pending" } });
+                "rolloutId": events[first].detail["rolloutId"], "modelAssociation": { "method": "pending" } }).into();
             headings.entry(first).or_default().push(header);
         }
         // Associate delayed results without moving them or counting nested tools

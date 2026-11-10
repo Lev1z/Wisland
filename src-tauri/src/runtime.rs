@@ -6,7 +6,7 @@ use std::{
     fs::File,
     io::{Read, Seek, SeekFrom},
     path::{Path, PathBuf},
-    sync::Mutex,
+    sync::{Arc, Mutex},
     time::{Duration, Instant, SystemTime},
 };
 use tauri::{Emitter, Manager};
@@ -16,6 +16,44 @@ const READ_BYTES: u64 = 512 * 1024;
 const LINE_BYTES: usize = 2 * 1024 * 1024;
 const MAX_EVENTS: usize = 800;
 const DETAIL_CHARS: usize = 32 * 1024;
+
+// Raw retained JSON is immutable across projections and snapshots. The small
+// association overlay belongs to each logical view, so adding it never clones
+// a potentially 32 KiB source record. Mirror edits use copy-on-write.
+#[derive(Clone)]
+struct EventDetail {
+    raw: Arc<Value>,
+    association: Value,
+}
+
+impl From<Value> for EventDetail {
+    fn from(mut value: Value) -> Self {
+        let association = value.as_object_mut().and_then(|v| v.remove("modelAssociation")).unwrap_or(Value::Null);
+        Self { raw: Arc::new(value), association }
+    }
+}
+impl std::ops::Index<&str> for EventDetail {
+    type Output = Value;
+    fn index(&self, key: &str) -> &Value {
+        if key == "modelAssociation" { &self.association } else { &self.raw[key] }
+    }
+}
+impl std::ops::IndexMut<&str> for EventDetail {
+    fn index_mut(&mut self, key: &str) -> &mut Value {
+        if key == "modelAssociation" { &mut self.association } else { &mut Arc::make_mut(&mut self.raw)[key] }
+    }
+}
+impl Serialize for EventDetail {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        if let Some(fields) = self.raw.as_object() {
+            let mut map = serializer.serialize_map(None)?;
+            for (key, value) in fields { map.serialize_entry(key, value)?; }
+            if !self.association.is_null() { map.serialize_entry("modelAssociation", &self.association)?; }
+            map.end()
+        } else { self.raw.as_ref().serialize(serializer) }
+    }
+}
 
 #[path = "runtime_catalog.rs"]
 mod catalog;
@@ -43,7 +81,7 @@ pub struct RuntimeEvent {
     #[serde(skip)]
     input_boundary: bool,
     #[serde(skip)]
-    detail: Value,
+    detail: EventDetail,
 }
 
 #[derive(Clone, Serialize)]
@@ -481,7 +519,7 @@ impl Projection {
             } else {
                 string(p, "status")
             },
-            detail,
+            detail: detail.into(),
             model_presentation: None,
             continuity: self.continuity,
             input_boundary: std::mem::take(&mut self.input_boundary),
@@ -977,6 +1015,22 @@ pub fn setup(app: &tauri::AppHandle) {
 mod tests {
     use super::*;
     use std::fs;
+    #[test]
+    fn details_share_raw_storage_and_isolate_association_overlays() {
+        let mut original: EventDetail = json!({"raw":{"payload":{"text":"x".repeat(32000)}},"content":"body"}).into();
+        let mut projected = original.clone();
+        projected["modelAssociation"] = json!({"headerId":"model-1"});
+        assert!(Arc::ptr_eq(&original.raw, &projected.raw));
+        assert!(original["modelAssociation"].is_null());
+        let snapshot = projected.clone();
+        assert!(Arc::ptr_eq(&projected.raw, &snapshot.raw));
+        let serialized = serde_json::to_value(&snapshot).unwrap();
+        assert_eq!(serialized["modelAssociation"]["headerId"], "model-1");
+        assert_eq!(serialized["raw"]["payload"]["text"].as_str().unwrap().len(), 32000);
+        original["mirror"] = json!({"new":"mirror"});
+        assert!(!Arc::ptr_eq(&original.raw, &snapshot.raw));
+        assert!(snapshot["mirror"].is_null());
+    }
     #[test]
     fn titles_map_by_thread_id_and_follow_latest_complete_rename() {
         let id = "019a6b3c-1234-5678-9abc-0123456789ab";

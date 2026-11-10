@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::Mutex;
+use tauri::{Emitter, Manager};
 
 #[cfg(windows)]
 use windows::core::PWSTR;
@@ -183,8 +185,7 @@ fn visible_running(now: u64) -> bool {
     false
 }
 
-#[tauri::command]
-pub fn get_codex_status() -> CodexStatus {
+fn read_codex_status() -> CodexStatus {
     let now = now_ms();
     let path = status_path();
     let persisted = fs::read_to_string(&path)
@@ -233,15 +234,54 @@ pub fn get_codex_status() -> CodexStatus {
     }
 }
 
+struct StatusCache(CodexStatus);
+impl StatusCache {
+    fn update(&mut self, next: CodexStatus) -> bool {
+        let changed = self.0.phase != next.phase || (self.0.updated_at > 0) != (next.updated_at > 0);
+        self.0 = next;
+        changed
+    }
+}
+pub struct CodexStatusState(Mutex<StatusCache>);
+
 #[tauri::command]
-pub fn clear_codex_status() -> Result<CodexStatus, String> {
+pub fn get_codex_status(state: tauri::State<'_, CodexStatusState>) -> CodexStatus {
+    state.0.lock().unwrap_or_else(|e| e.into_inner()).0.clone()
+}
+
+pub fn setup(app: &tauri::AppHandle) {
+    app.manage(CodexStatusState(Mutex::new(StatusCache(read_codex_status()))));
+    let app = app.clone();
+    std::thread::spawn(move || loop {
+        std::thread::sleep(std::time::Duration::from_secs(2));
+        let state = app.state::<CodexStatusState>();
+        let mut cache = state.0.lock().unwrap_or_else(|e| e.into_inner());
+        let next = read_codex_status();
+        let changed = cache.update(next.clone());
+        drop(cache);
+        if changed {
+            crate::tray_mode::status_updated(&app, &next.phase);
+            let _ = app.emit("codex-status", next);
+        }
+    });
+}
+
+#[tauri::command]
+pub fn clear_codex_status(app: tauri::AppHandle) -> Result<CodexStatus, String> {
+    let state = app.state::<CodexStatusState>();
+    let mut cache = state.0.lock().unwrap_or_else(|e| e.into_inner());
     for path in [status_path(), running_path(), hold_path()] {
         if path.exists() {
             fs::remove_file(&path)
                 .map_err(|error| format!("无法清理 Codex 状态文件 {}：{error}", path.display()))?;
         }
     }
-    Ok(get_codex_status())
+    let next = read_codex_status();
+    cache.update(next.clone());
+    drop(cache);
+    crate::tray_mode::status_updated(&app, &next.phase);
+    let _ = app.emit("codex-status", &next);
+    Ok(next)
 }
 
 fn escape_toml_basic_string(value: &str) -> String {
@@ -329,6 +369,19 @@ statusMessage = "Updating Wisland Codex status"
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn status_cache_updates_timestamps_without_duplicate_phase_notifications() {
+        let status = |phase: &str, updated_at| CodexStatus { phase: phase.into(), updated_at, status_path: "fixture".into() };
+        let mut cache = StatusCache(status("idle", 10));
+        assert!(!cache.update(status("idle", 20)));
+        assert_eq!(cache.0.updated_at, 20);
+        assert!(cache.update(status("running", 30)));
+        assert!(!cache.update(status("running", 40)));
+        assert!(cache.update(status("completed", 50)));
+        assert!(cache.update(status("stale", 60)));
+        assert!(cache.update(status("stale", 0)));
+    }
 
     #[test]
     fn replaces_only_the_wisland_managed_block() {

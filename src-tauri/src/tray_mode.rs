@@ -653,6 +653,15 @@ fn ring_icon(snapshot: &TraySnapshot) -> Image<'static> {
     Image::new_owned(pixels, 32, 32)
 }
 
+pub(crate) fn status_updated(app: &tauri::AppHandle, phase: &str) {
+    let Some(state) = app.try_state::<TrayState>() else { return; };
+    let mut snapshot = state.snapshot.lock().unwrap();
+    if snapshot.phase == phase { return; }
+    snapshot.phase = phase.to_owned();
+    drop(snapshot);
+    publish(app);
+}
+
 fn publish(app: &tauri::AppHandle) {
     let snapshot = app.state::<TrayState>().snapshot.lock().unwrap().clone();
     if let Some(tray) = app.tray_by_id("wisland") {
@@ -827,15 +836,9 @@ pub fn setup(app: &tauri::AppHandle) -> tauri::Result<()> {
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
         let mut last_poll = None::<Instant>;
-        let mut last_phase = String::new();
+        status_updated(&handle, &agent_status::get_codex_status(handle.state::<agent_status::CodexStatusState>()).phase);
         loop {
             if active(&handle) {
-                let phase = agent_status::get_codex_status().phase;
-                handle.state::<TrayState>().snapshot.lock().unwrap().phase = phase.clone();
-                if phase != last_phase {
-                    last_phase = phase;
-                    publish(&handle);
-                }
                 if last_poll.is_none_or(|t| t.elapsed() >= Duration::from_secs(120)) {
                     last_poll = Some(Instant::now());
                     let refresh_handle = handle.clone();
@@ -845,7 +848,6 @@ pub fn setup(app: &tauri::AppHandle) -> tauri::Result<()> {
                 }
             } else {
                 last_poll = None;
-                last_phase.clear();
             }
             tokio::time::sleep(Duration::from_secs(2)).await;
         }

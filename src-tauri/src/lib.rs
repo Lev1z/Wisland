@@ -225,6 +225,7 @@ pub fn run() {
             });
 
             // --- 系统托盘 ---
+            agent_status::setup(app.handle());
             tray_mode::setup(app.handle())?;
             runtime::setup(app.handle());
             display::watch(window.clone());

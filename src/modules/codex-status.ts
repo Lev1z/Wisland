@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { codexStatusDot, codexStatusLabel } from "../dom";
 import { applyIndicatorStatus } from "./minimize-drag";
 
@@ -49,8 +50,10 @@ async function refresh(): Promise<void> {
 }
 
 export function initCodexStatus(): void {
+  void listen<CodexStatus>("codex-status", ({ payload }) => {
+    if (!document.hidden) render(payload);
+  }).catch(error => console.warn("Failed to subscribe to Codex status", error));
   void refresh();
   document.addEventListener("visibilitychange", () => { if (!document.hidden) void refresh(); });
-  // 状态文件不会以亚秒级变化；降低 IPC 频率可减少常驻内存和 CPU 压力。
-  window.setInterval(() => void refresh(), 2_000);
+  // One backend sampler owns process/file checks. Showing the capsule reads its cache.
 }
