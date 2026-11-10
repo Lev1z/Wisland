@@ -38,11 +38,11 @@
 :root[data-surface="settings"][data-wisland-theme="glass"][data-acrylic="true"] .sidebar { background: var(--settings-sidebar-fill); }
 :root[data-surface="settings"][data-wisland-theme="glass"][data-acrylic="true"] .content { background: transparent; }
 :root[data-surface="settings"][data-wisland-theme="glass"][data-acrylic="true"] :is(.setting-group, .about-card) { background: #18181880; }
-/* Intro layers are opaque behind the old sidebar. Retire them only after the
-   unchanged entrance has finished, so glass does not retain a purple underlay. */
-:root[data-surface="settings"][data-wisland-theme="glass"][data-acrylic="true"] .menu-open .menu-prelayers { visibility: hidden; transition: visibility 0s .85s; }
+/* Only the sidebar tints native glass. Painting the two moving underlays with
+   the same translucent color would stack their alpha and darken the entrance. */
 :root[data-surface="settings"][data-wisland-theme="glass"] .menu-prelayer-back { background: var(--settings-sidebar-fill); }
-:root[data-surface="settings"][data-wisland-theme="glass"] .menu-prelayer-front { background: var(--settings-sidebar-fill); backdrop-filter: blur(12px); }
+:root[data-surface="settings"][data-wisland-theme="glass"] .menu-prelayer-front { background: var(--settings-sidebar-fill); }
+:root[data-surface="settings"][data-wisland-theme="glass"][data-acrylic="true"] .menu-prelayer { background: transparent; backdrop-filter: none; }
 .effect-dark { background: #111; border: 1px solid #ffffff22; }
 :root[data-wisland-theme="glass"] :is(#update-details, #update-confirm) { background: #303030df; border-color: #ffffff30; backdrop-filter: blur(22px); color: #f1f2f4; }
 :root[data-wisland-theme="glass"] :is(#update-details, #update-confirm)::backdrop { background: #0005; backdrop-filter: blur(2px); }

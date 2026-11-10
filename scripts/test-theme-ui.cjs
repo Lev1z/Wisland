@@ -47,12 +47,36 @@ const {chromium} = require('../target/tray-qa-tools/node_modules/playwright');
           await page.evaluate(()=>{document.body.classList.remove('minimized');document.getElementById('island-capsule').classList.remove('minimized');});
         }
         if (theme==='glass' && surface==='settings') {
-          const sidebarFill = await page.locator('.sidebar').evaluate(e=>getComputedStyle(e).backgroundColor);
           for (const selector of ['.menu-prelayer-front','.menu-prelayer-back']) {
-            assert.equal(await page.locator(selector).evaluate(e=>getComputedStyle(e).backgroundColor),sidebarFill,'glass intro and resting sidebar share the same dark gray');
+            assert.equal(await page.locator(selector).evaluate(e=>getComputedStyle(e).backgroundColor),'rgba(0, 0, 0, 0)','underlays must not tint the native glass a second time');
+            assert.equal(await page.locator(selector).evaluate(e=>getComputedStyle(e).backdropFilter),'none','underlays must not blur the backdrop a second time');
           }
-          await page.waitForTimeout(900);
-          assert.equal(await page.locator('.menu-prelayers').evaluate(e=>getComputedStyle(e).visibility),'hidden','completed intro layer does not tint acrylic purple');
+          if (border==='off') {
+            await page.evaluate(async()=>{
+              // Synthetic native-backdrop color: browser captures cannot include DWM.
+              document.documentElement.style.backgroundColor='#8899aa';
+              const shell=document.getElementById('settings-shell');
+              shell.classList.remove('menu-open'); void shell.offsetWidth;
+              await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+              shell.classList.add('menu-open'); void shell.offsetWidth;
+              window.introAnimations=document.getAnimations();
+              window.introAnimations.forEach(a=>a.pause());
+            });
+            const samples=[];
+            for (const ms of [500,750,950,1300]) {
+              await page.evaluate(ms=>window.introAnimations.forEach(a=>a.currentTime=ms),ms);
+              const png=(await page.screenshot()).toString('base64');
+              samples.push(await page.evaluate(async png=>{
+                const img=new Image(); img.src='data:image/png;base64,'+png; await img.decode();
+                const canvas=document.createElement('canvas');canvas.width=img.width;canvas.height=img.height;
+                const ctx=canvas.getContext('2d');ctx.drawImage(img,0,0);
+                return Array.from(ctx.getImageData(50,550,1,1).data);
+              },png));
+            }
+            assert.ok(samples.every(s=>s.every((n,i)=>Math.abs(n-samples[0][i])<=1)),`intro tint must not jump when underlays finish: ${JSON.stringify(samples)}`);
+            assert.ok(samples[0][0]<130 && samples[0][3]===255,'sample is inside the tinted sidebar, not the uncovered backdrop');
+            await page.evaluate(()=>{window.introAnimations.forEach(a=>a.finish());document.documentElement.style.removeProperty('background-color');});
+          }
         }
         if (['aurora','mono'].includes(border) && surface!=='capsule') {
           assert.equal(await page.locator(target).evaluate(e=>getComputedStyle(e,'::after').animationDuration),border==='aurora'?'4s':'6s');
