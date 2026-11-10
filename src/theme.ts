@@ -22,10 +22,12 @@ export function initTheme(surface: "capsule" | "settings" | "sidebar"): void {
   const capsule = surface === "capsule" ? document.getElementById("island-capsule") : null;
   const clip = async () => {
     if (!capsule || !glass) return;
-    const rect = capsule.getBoundingClientRect();
+    const outline = document.body.classList.contains("minimized") ? document.getElementById("collapsed-indicator") : capsule;
+    if (!outline) return;
+    const rect = outline.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return;
-    const scale = rect.width / Math.max(1, capsule.offsetWidth);
-    const radius = Math.min(rect.width / 2, rect.height / 2, parseFloat(getComputedStyle(capsule).borderTopLeftRadius) * scale || 0);
+    const scale = rect.width / Math.max(1, outline.offsetWidth);
+    const radius = Math.min(rect.width / 2, rect.height / 2, parseFloat(getComputedStyle(outline).borderTopLeftRadius) * scale || 0);
     const bounds = [rect.x, rect.y, rect.width, rect.height, radius].map(n => Math.round(n * 100) / 100);
     const key = `${devicePixelRatio}:${bounds}`;
     if (key === lastBounds) return;
@@ -45,8 +47,14 @@ export function initTheme(surface: "capsule" | "settings" | "sidebar"): void {
   if (capsule) {
     new ResizeObserver(follow).observe(capsule);
     new MutationObserver(() => { followUntil = performance.now() + 800; follow(); }).observe(capsule, { attributes: true, attributeFilter: ["class", "style"] });
-    for (const event of ["transitionrun", "animationstart", "transitionend", "animationend"]) {
-      capsule.addEventListener(event, e => { if (e.target === capsule) { followUntil = performance.now() + 800; follow(); } });
+    new MutationObserver(() => { followUntil = performance.now() + 800; follow(); }).observe(document.body, { attributes: true, attributeFilter: ["class"] });
+    const indicator = document.getElementById("collapsed-indicator");
+    if (indicator) new ResizeObserver(follow).observe(indicator);
+    for (const outline of [capsule, indicator]) {
+      if (!outline) continue;
+      for (const event of ["transitionrun", "animationstart", "transitionend", "animationend"]) {
+        outline.addEventListener(event, e => { if (e.target === outline) { followUntil = performance.now() + 800; follow(); } });
+      }
     }
     window.addEventListener("resize", follow);
   }
@@ -58,6 +66,7 @@ export function initTheme(surface: "capsule" | "settings" | "sidebar"): void {
     if (glass) await clip();
     const material = await invoke<Material>("get_window_theme");
     if (id !== generation) return;
+    glass = theme === "glass" && material.acrylic;
     root.dataset.wislandTheme = theme;
     root.dataset.acrylic = String(material.acrylic);
     root.dataset.theme = material.dark ? "dark" : "light";

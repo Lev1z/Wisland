@@ -9,8 +9,9 @@ use windows::Win32::{
         DwmEnableBlurBehindWindow, DwmExtendFrameIntoClientArea, DwmSetWindowAttribute,
         DWMSBT_NONE, DWMSBT_TRANSIENTWINDOW, DWMWA_SYSTEMBACKDROP_TYPE,
         DWMWA_TRANSITIONS_FORCEDISABLED, DWMWA_USE_IMMERSIVE_DARK_MODE,
-        DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND, DWM_BB_ENABLE, DWM_BLURBEHIND,
+        DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND, DWM_BB_ENABLE, DWM_BB_BLURREGION, DWM_BLURBEHIND,
     },
+    Graphics::Gdi::{CreateRectRgn, DeleteObject},
     System::Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS},
     UI::{
         Accessibility::{HCF_HIGHCONTRASTON, HIGHCONTRASTW},
@@ -330,6 +331,14 @@ pub fn apply(panel: &tauri::WebviewWindow, previous: Option<Appearance>, theme: 
             } else {
                 // Remove the full-client glass frame when switching back to opaque.
                 let _ = DwmExtendFrameIntoClientArea(hwnd, &MARGINS::default());
+                // Restore Tao's transparent-window setup, otherwise the capsule's
+                // click-through margins can become black after leaving acrylic.
+                let region = CreateRectRgn(0, 0, -1, -1);
+                let _ = DwmEnableBlurBehindWindow(hwnd, &DWM_BLURBEHIND {
+                    dwFlags: DWM_BB_ENABLE | DWM_BB_BLURREGION,
+                    fEnable: BOOL(1), hRgnBlur: region, ..Default::default()
+                });
+                let _ = DeleteObject(region.into());
             }
         }
     }

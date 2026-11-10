@@ -59,7 +59,9 @@ const { chromium } = require('../target/tray-qa-tools/node_modules/playwright');
             const el = document.getElementById(id);
             return [el.firstElementChild.getBoundingClientRect().width, getComputedStyle(el).gridTemplateColumns];
           }));
-          assert.ok(widths.every(w => Math.abs(w[0] - widths[0][0]) < 1 && w[1] === widths[0][1]), 'visual and border cards share track widths and wrap rules');
+          const tracks = widths.map(w => w[1].split(' ').map(parseFloat));
+          assert.ok(widths.every((w,i) => Math.abs(w[0] - widths[0][0]) < 1 && tracks[i].length === tracks[0].length
+            && tracks[i].every((n,j) => Math.abs(n - tracks[0][j]) < 1)), `visual and border cards share track widths and wrap rules: ${JSON.stringify(widths)}`);
         }
       }
     }

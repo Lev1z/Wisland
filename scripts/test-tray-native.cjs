@@ -47,7 +47,7 @@ async function main() {
   const child = spawn(path.resolve(__dirname, `../src-tauri/target/${profile}/wisland.exe`), [], {
     windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'], cwd: path.resolve(__dirname, '..'),
     env: { ...process.env,
-      ...(runtimeHome ? { CODEX_HOME: runtimeHome, WISLAND_UPDATE_CONFIG_DIR: path.join(runtimeHome, 'roaming/wisland') } : {}),
+      ...(runtimeHome ? { CODEX_HOME: runtimeHome, WISLAND_UPDATE_CONFIG_DIR: path.join(runtimeHome, 'roaming/wisland'), WISLAND_SETTINGS_CONFIG_DIR: path.join(runtimeHome, 'roaming/wisland') } : {}),
       WEBVIEW2_USER_DATA_FOLDER: path.resolve(__dirname, '../target/tray-native-qa-profile'),
       WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-address=127.0.0.1 --remote-debugging-port=${port}`,
     },
@@ -64,6 +64,37 @@ async function main() {
     await popup.waitForFunction(() => document.documentElement.dataset.acrylic !== undefined);
     const invoke = (command, args) => main.evaluate(({ command, args }) => window.__TAURI__.core.invoke(command, args), { command, args });
     assert.equal(await main.evaluate(() => window.__TAURI__.app.getVersion()), require('../package.json').version, 'installed runtime version must match the build metadata');
+    if (process.argv.includes('--themes')) {
+      assert.ok(runtimeHome, 'theme writes require --runtime isolated preferences');
+      await invoke('open_settings');
+      const settings = await until(() => pages().find(p => p.url().includes('/settings.html')), 'theme settings page');
+      await settings.waitForSelector('#border-effect-options', {state:'attached'});
+      const core = await invoke('get_settings');
+      for (const theme of ['aurora','mono','glass','off']) {
+        await invoke('set_appearance_preferences', {
+          opacity:core.capsule_opacity,scale:core.capsule_scale,iconBarStyle:core.icon_bar_style,iconBarOrder:core.icon_bar_order,
+          borderEffect:theme,borderCustomSource:core.border_custom_source,leftVisualMode:core.left_visual_mode,leftVisualSource:core.left_visual_source,
+          rightVisualMode:core.right_visual_mode,rightVisualSource:core.right_visual_source,visualAssets:core.visual_assets,borderAssets:core.border_assets
+        });
+        for (const p of [main,settings,popup]) {
+          await p.waitForFunction(theme => document.documentElement.dataset.wislandTheme === theme, theme);
+          assert.equal(await p.evaluate(() => document.documentElement.dataset.theme), 'dark');
+          if (theme !== 'glass') assert.equal(await p.evaluate(() => document.documentElement.dataset.acrylic), 'false');
+        }
+        if (theme === 'glass') {
+          await pause(1000);
+          await main.screenshot({path:path.resolve(__dirname,'../target/theme-native-capsule-glass.png')});
+          await settings.screenshot({path:path.resolve(__dirname,'../target/theme-native-settings-glass.png')});
+        }
+      }
+      assert.equal(JSON.parse(await fs.readFile(path.join(runtimeHome,'roaming/wisland/settings.json'),'utf8')).border_effect, 'off');
+      await main.evaluate(() => new window.__TAURI__.window.Window('settings').close());
+      await invoke('open_settings');
+      const reopened = await until(() => pages().find(p => p.url().includes('/settings.html') && p !== settings), 'reopened settings');
+      await reopened.waitForFunction(() => document.documentElement.dataset.wislandTheme === 'off');
+      await main.evaluate(() => new window.__TAURI__.window.Window('settings').close());
+      console.log('PASS: four themes sync across three native windows / material reset / settings recreation / isolated preferences');
+    }
     if (process.argv.includes('--display')) {
       await invoke('set_display_mode', { mode: 'capsule' });
       await invoke('start_drag');
