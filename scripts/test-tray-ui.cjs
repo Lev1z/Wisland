@@ -67,7 +67,7 @@ async function main() {
           invoke: async (command, args) => {
             if (command === 'plugin:event|listen') { listeners.set(args.event, callbacks.get(args.handler)); return ++serial; }
             window.qaCommands.push({ command, args });
-            if (command === 'get_settings') return { border_effect: 'glass' };
+            if (command === 'get_settings') return { theme: 'glass', border_effect: 'off' };
             if (command === 'get_window_theme') return { acrylic: false, dark: matchMedia('(prefers-color-scheme: dark)').matches, motion: true };
             if (command === 'get_tray_appearance') return { acrylic: false, dark: matchMedia('(prefers-color-scheme: dark)').matches, motion: true };
             if (command === 'get_tray_snapshot' || command === 'refresh_tray_quota') return snapshot;

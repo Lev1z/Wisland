@@ -79,6 +79,9 @@ const { chromium } = require('../target/tray-qa-tools/node_modules/playwright');
     assert.equal(await page.locator('#clear-codex-status').textContent(), '重置任务状态');
     assert.equal(await page.locator('#run-environment-check').getAttribute('class'), 'secondary-button compact');
     assert.equal(await page.locator('#page-custom small').count(), 0);
+    assert.equal(await page.locator('#import-border-visual, #border-visual-file, #border-asset-options').count(), 0);
+    assert.equal(await page.locator('#theme-options button').count(), 2);
+    assert.equal(await page.locator('#border-effect-options button').count(), 3);
     await page.evaluate(() => {
       document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
       document.getElementById('page-music').classList.add('active');

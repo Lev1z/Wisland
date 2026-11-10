@@ -16,28 +16,28 @@ const {chromium} = require('../target/tray-qa-tools/node_modules/playwright');
       await page.setContent(fs.readFileSync(html,'utf8').replace(/<script[\s\S]*?<\/script>/g,''));
       for (const style of [...styles,'src/theme.css']) await page.addStyleTag({content:fs.readFileSync(style,'utf8')});
       await page.evaluate(() => {
-        window.commands=[]; window.fixture={border_effect:'off'}; window.nativeAcrylic=true;
+        window.commands=[]; window.fixture={theme:'dark',border_effect:'off'}; window.nativeAcrylic=true;
         window.module={exports:{}}; window.exports=window.module.exports;
         window.require = name => name.endsWith('.css') ? {} : {
           listen:async (_event, callback) => {window.themeChanged=callback;return ()=>{};},
           invoke:async (command,args) => {
             window.commands.push({command,args});
             if (command==='get_settings') return window.fixture;
-            if (command==='get_window_theme') return {dark:true,motion:true,acrylic:window.nativeAcrylic && window.fixture.border_effect==='glass'};
+            if (command==='get_window_theme') return {dark:true,motion:true,acrylic:window.nativeAcrylic && window.fixture.theme==='glass'};
           }
         };
         document.getElementById('settings-shell')?.classList.add('menu-open');
       });
       await page.addScriptTag({content:code});
       await page.evaluate(surface=>window.module.exports.initTheme(surface),surface);
-      await page.waitForFunction(()=>document.documentElement.dataset.wislandTheme==='off');
+      await page.waitForFunction(()=>document.documentElement.dataset.wislandTheme==='dark');
       const target = surface==='capsule' ? '#island-capsule' : surface==='sidebar' ? '.details' : 'body';
       const transition = await page.locator(target).evaluate(e=>getComputedStyle(e).transition);
-      for (const theme of ['aurora','mono','glass','custom','off']) {
-        await page.evaluate(theme=>{
-          window.fixture={border_effect:theme}; window.themeChanged({payload:window.fixture});
-        },theme);
-        await page.waitForFunction(theme=>document.documentElement.dataset.wislandTheme===theme,theme);
+      for (const [theme,border] of [['dark','aurora'],['dark','mono'],['glass','off'],['glass','aurora'],['glass','mono'],['dark','off']]) {
+        await page.evaluate(([theme,border])=>{
+          window.fixture={theme,border_effect:border}; window.themeChanged({payload:window.fixture});
+        },[theme,border]);
+        await page.waitForFunction(([theme,border])=>document.documentElement.dataset.wislandTheme===theme && document.documentElement.dataset.borderEffect===border,[theme,border]);
         assert.equal(await page.locator(target).evaluate(e=>getComputedStyle(e).transition),transition,'existing transition remains unchanged');
         assert.equal(await page.evaluate(()=>document.documentElement.dataset.acrylic),String(theme==='glass'));
         if (theme==='glass' && surface==='capsule') {
@@ -47,20 +47,21 @@ const {chromium} = require('../target/tray-qa-tools/node_modules/playwright');
           await page.evaluate(()=>{document.body.classList.remove('minimized');document.getElementById('island-capsule').classList.remove('minimized');});
         }
         if (theme==='glass' && surface==='settings') {
+          assert.equal(await page.locator('.menu-prelayer-front').evaluate(e=>getComputedStyle(e).backgroundColor),'rgba(184, 184, 184, 0.17)','glass intro is neutral translucent gray');
           await page.waitForTimeout(900);
           assert.equal(await page.locator('.menu-prelayers').evaluate(e=>getComputedStyle(e).visibility),'hidden','completed intro layer does not tint acrylic purple');
         }
-        if (['aurora','mono'].includes(theme) && surface!=='capsule') {
-          assert.equal(await page.locator(target).evaluate(e=>getComputedStyle(e,'::after').animationDuration),theme==='aurora'?'4s':'6s');
+        if (['aurora','mono'].includes(border) && surface!=='capsule') {
+          assert.equal(await page.locator(target).evaluate(e=>getComputedStyle(e,'::after').animationDuration),border==='aurora'?'4s':'6s');
         }
       }
-      await page.evaluate(()=>{window.nativeAcrylic=false;window.fixture={border_effect:'glass'};window.themeChanged({payload:window.fixture});});
+      await page.evaluate(()=>{window.nativeAcrylic=false;window.fixture={theme:'glass',border_effect:'off'};window.themeChanged({payload:window.fixture});});
       await page.waitForFunction(()=>document.documentElement.dataset.wislandTheme==='glass' && document.documentElement.dataset.acrylic==='false');
       const fallback = await page.locator(target).evaluate(e=>getComputedStyle(e).backgroundColor);
       assert.ok(!['transparent','rgba(0, 0, 0, 0)'].includes(fallback),`${surface} has opaque fallback`);
       assert.deepEqual(errors,[]);
       await page.close();
     }
-    console.log('PASS: shared themes across 3 surfaces / native-material fallback / border speeds / capsule clip / unchanged transitions');
+    console.log('PASS: independent themes and borders across 3 surfaces / native fallback / border speeds / capsule and indicator clip / gray glass intro / unchanged transitions');
   } finally {await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

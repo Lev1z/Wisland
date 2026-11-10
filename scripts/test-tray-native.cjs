@@ -70,30 +70,40 @@ async function main() {
       const settings = await until(() => pages().find(p => p.url().includes('/settings.html')), 'theme settings page');
       await settings.waitForSelector('#border-effect-options', {state:'attached'});
       const core = await invoke('get_settings');
-      for (const theme of ['aurora','mono','glass','off']) {
+      for (const [theme,border] of [['dark','aurora'],['dark','mono'],['glass','off'],['glass','aurora'],['glass','mono'],['dark','off']]) {
         await invoke('set_appearance_preferences', {
           opacity:core.capsule_opacity,scale:core.capsule_scale,iconBarStyle:core.icon_bar_style,iconBarOrder:core.icon_bar_order,
-          borderEffect:theme,borderCustomSource:core.border_custom_source,leftVisualMode:core.left_visual_mode,leftVisualSource:core.left_visual_source,
+          theme,borderEffect:border,borderCustomSource:core.border_custom_source,leftVisualMode:core.left_visual_mode,leftVisualSource:core.left_visual_source,
           rightVisualMode:core.right_visual_mode,rightVisualSource:core.right_visual_source,visualAssets:core.visual_assets,borderAssets:core.border_assets
         });
         for (const p of [main,settings,popup]) {
           await p.waitForFunction(theme => document.documentElement.dataset.wislandTheme === theme, theme);
+          assert.equal(await p.evaluate(() => document.documentElement.dataset.borderEffect),border);
           assert.equal(await p.evaluate(() => document.documentElement.dataset.theme), 'dark');
           if (theme !== 'glass') assert.equal(await p.evaluate(() => document.documentElement.dataset.acrylic), 'false');
         }
+        const host = await invoke('get_window_theme');
+        if (host.hostBackdrop !== undefined) assert.equal(host.hostBackdrop,1,'capsule host never uses full-client Desktop Acrylic');
+        if (host.hostBorder !== undefined) assert.equal(host.hostBorder,0xfffffffe,'capsule host has no native rectangular border');
         if (theme === 'glass') {
           await pause(1000);
+          const material = await invoke('get_window_theme');
+          if (material.acrylic) {
+            const expected = await main.locator('#island-capsule').evaluate(e=>{const r=e.getBoundingClientRect();return [r.x,r.y,r.right,r.bottom].map(n=>n*devicePixelRatio);});
+            assert.ok(material.capsuleClip && material.capsuleClip.every((n,i)=>Math.abs(n-expected[i])<=3),'native region matches capsule, not its wider host');
+          }
           await main.screenshot({path:path.resolve(__dirname,'../target/theme-native-capsule-glass.png')});
           await settings.screenshot({path:path.resolve(__dirname,'../target/theme-native-settings-glass.png')});
         }
       }
       assert.equal(JSON.parse(await fs.readFile(path.join(runtimeHome,'roaming/wisland/settings.json'),'utf8')).border_effect, 'off');
+      assert.equal(JSON.parse(await fs.readFile(path.join(runtimeHome,'roaming/wisland/settings.json'),'utf8')).theme, 'dark');
       await main.evaluate(() => new window.__TAURI__.window.Window('settings').close());
       await invoke('open_settings');
       const reopened = await until(() => pages().find(p => p.url().includes('/settings.html') && p !== settings), 'reopened settings');
-      await reopened.waitForFunction(() => document.documentElement.dataset.wislandTheme === 'off');
+      await reopened.waitForFunction(() => document.documentElement.dataset.wislandTheme === 'dark');
       await main.evaluate(() => new window.__TAURI__.window.Window('settings').close());
-      console.log('PASS: four themes sync across three native windows / material reset / settings recreation / isolated preferences');
+      console.log('PASS: six independent theme/border combinations across three native windows / host material and border / real capsule region / settings recreation / isolated preferences');
     }
     if (process.argv.includes('--display')) {
       await invoke('set_display_mode', { mode: 'capsule' });
