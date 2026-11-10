@@ -54,6 +54,7 @@ async function main() {
   });
   child.stderr.on('data', data => process.stderr.write(data));
   let browser;
+  let materialFixture;
   try {
     await until(async () => { try { return (await fetch(`http://127.0.0.1:${port}/json/version`)).ok; } catch { return false; } }, 'WebView2 endpoint');
     const endpoint = await (await fetch(`http://127.0.0.1:${port}/json/version`)).json();
@@ -70,6 +71,27 @@ async function main() {
       const settings = await until(() => pages().find(p => p.url().includes('/settings.html')), 'theme settings page');
       await settings.waitForSelector('#border-effect-options', {state:'attached'});
       const core = await invoke('get_settings');
+      const geometry = await main.evaluate(async()=>{
+        const w=window.__TAURI__.window.getCurrentWindow(); return {position:await w.outerPosition(),size:await w.outerSize()};
+      });
+      const fixtureScript = path.resolve(__dirname,'native-material-fixture.ps1');
+      const fixtureArgs = ['-NoProfile','-ExecutionPolicy','Bypass','-File',fixtureScript,
+        '-Left',String(geometry.position.x),'-Top',String(geometry.position.y),'-Width',String(geometry.size.width),'-Height',String(geometry.size.height)];
+      const ready = path.resolve(__dirname,`../target/material-fixture-ready-${Date.now()}.txt`);
+      const backgroundArgs = [...fixtureArgs]; backgroundArgs[backgroundArgs.indexOf('-Height')+1]=String(Math.max(200,geometry.size.height));
+      materialFixture = spawn('powershell.exe',[...backgroundArgs,'-Output',ready],{windowsHide:true,stdio:['ignore','ignore','pipe']});
+      materialFixture.stderr.on('data',data=>process.stderr.write(data));
+      await until(async()=>{try {await fs.access(ready);return true;}catch{return false;}},'checkerboard visible');
+      await pause(250);
+      const capture = async label => {
+        const {promisify}=require('node:util'); const {execFile}=require('node:child_process');
+        const file=path.resolve(__dirname,`../target/material-composited-${label}.png`);
+        const currentSize=await main.evaluate(()=>window.__TAURI__.window.getCurrentWindow().outerSize());
+        const args=[...fixtureArgs];args[args.indexOf('-Height')+1]=String(currentSize.height);
+        const result=await promisify(execFile)('powershell.exe',[...args,'-Capture','-Output',file],{windowsHide:true});
+        return JSON.parse(result.stdout.trim());
+      };
+      let baseline;
       for (const [theme,border] of [['dark','aurora'],['dark','mono'],['glass','off'],['glass','aurora'],['glass','mono'],['dark','off']]) {
         await invoke('set_appearance_preferences', {
           opacity:core.capsule_opacity,scale:core.capsule_scale,iconBarStyle:core.icon_bar_style,iconBarOrder:core.icon_bar_order,
@@ -85,9 +107,23 @@ async function main() {
         const host = await invoke('get_window_theme');
         if (host.hostBackdrop !== undefined) assert.equal(host.hostBackdrop,1,'capsule host never uses full-client Desktop Acrylic');
         if (host.hostBorder !== undefined) assert.equal(host.hostBorder,0xfffffffe,'capsule host has no native rectangular border');
+        if (!baseline) {
+          baseline=await capture('dark');
+          assert.ok(baseline.includes(190) || baseline.includes(35),'generated checkerboard is visible through host margins');
+        }
         if (theme === 'glass') {
           await pause(1000);
           const material = await invoke('get_window_theme');
+          assert.equal(material.acrylic,true,'the local composition material must actually initialize on this test machine');
+          assert.deepEqual(await capture(`glass-${border}`),baseline,'desktop-composited pixels OUTSIDE capsule remain unchanged; no rectangular material tint');
+          if (border==='off') {
+            await main.evaluate(()=>window.__TAURI__.event.emitTo('main','set-expand',true));
+            await pause(550);
+            assert.deepEqual(await capture('glass-expanded'),baseline,'expanded capsule leaves the host margins untinted');
+            await main.evaluate(()=>window.__TAURI__.event.emitTo('main','set-expand',false));
+            await pause(550);
+            assert.deepEqual(await capture('glass-collapsed'),baseline,'collapsing leaves no stale rectangular surface');
+          }
           if (material.acrylic) {
             const expected = await main.locator('#island-capsule').evaluate(e=>{const r=e.getBoundingClientRect();return [r.x,r.y,r.right,r.bottom].map(n=>n*devicePixelRatio);});
             assert.ok(material.capsuleClip && material.capsuleClip.every((n,i)=>Math.abs(n-expected[i])<=3),'native region matches capsule, not its wider host');
@@ -96,6 +132,7 @@ async function main() {
           await settings.screenshot({path:path.resolve(__dirname,'../target/theme-native-settings-glass.png')});
         }
       }
+      materialFixture.kill(); materialFixture=null;
       assert.equal(JSON.parse(await fs.readFile(path.join(runtimeHome,'roaming/wisland/settings.json'),'utf8')).border_effect, 'off');
       assert.equal(JSON.parse(await fs.readFile(path.join(runtimeHome,'roaming/wisland/settings.json'),'utf8')).theme, 'dark');
       await main.evaluate(() => new window.__TAURI__.window.Window('settings').close());
@@ -435,6 +472,7 @@ async function main() {
       process.stdin.pause();
     }
   } finally {
+    if (materialFixture) materialFixture.kill();
     child.kill();
     if (browser) await browser.close().catch(() => {});
   }

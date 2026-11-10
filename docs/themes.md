@@ -13,7 +13,9 @@
 
 三处窗口通过同一个 `appearance-changed` 事件同步。设置与侧栏保留现有 Desktop Acrylic，并缓存未变化的材质，避免普通设置保存反复重建合成表面。设置窗口在隐藏状态准备材质；关闭再创建时清除旧窗口的材质缓存。毛玻璃下的菜单入场层与静态侧栏共用半透明深灰底色，入场结束后清理。
 
-胶囊宿主窗口比胶囊本体宽，不能套用整窗 DWM 背景。胶囊独立使用 Accent Acrylic，并禁用宿主的系统背景、原生圆角外框和全客户区 DWM 扩展；根据实际 DOM 轮廓更新原生区域。稳态不持续轮询；尺寸、状态、DPI 或动画变化期间按渲染帧跟随，最小化时切换至顶部横条轮廓。侧栏继续使用现有原生视口裁切，滑动时长与首帧预热不变。
+胶囊宿主窗口比胶囊本体宽。整窗 DWM / Accent 材质会在透明留白中继续绘制，GDI 窗口区域正确也不代表背景合成被裁切。胶囊改用 Windows Composition：在 WebView2 下方创建一个 SpriteVisual，以 HostBackdropBrush 采样窗口后的场景，并使用圆角几何裁切。宿主关闭整窗系统背景、Accent、原生外框和全客户区 DWM 扩展。
+
+局部背景的位置、尺寸、圆角取自实际 DOM 轮廓并换算物理像素。稳态不持续轮询；尺寸、状态、DPI 或动画变化期间按渲染帧跟随，最小化时切换至顶部横条轮廓。侧栏继续使用现有原生视口裁切，滑动时长与首帧预热不变。接口或系统不支持时，胶囊使用纯色回退，不重新启用整窗材质。实现参考微软的 [Win32 Visual Layer](https://learn.microsoft.com/en-us/windows/apps/desktop/modernize/using-the-visual-layer-with-win32) 与 [HostBackdropBrush](https://learn.microsoft.com/en-us/uwp/api/windows.ui.composition.compositor.createhostbackdropbrush)。
 
 ## 更新界面
 
@@ -24,7 +26,7 @@
 - `node scripts/test-theme-ui.cjs`：三处主题、纯色回退、边框转速、横条裁切、设置过渡层清理及已有 transition 保持不变。
 - `node scripts/test-settings-ui.cjs`：三种窗口尺寸、卡片网格与控件。
 - `node scripts/test-tray-ui.cjs`：36 组侧栏界面回归。
-- `node scripts/test-tray-native.cjs --release --display --runtime --themes`：六种主题 / 边框组合跨窗口同步、宿主背景 / 边框属性、真实裁切区域、设置重建、胶囊定位、侧栏滑动 / 反向动画和 Runtime；通过 `WISLAND_SETTINGS_CONFIG_DIR`、`CODEX_HOME` 和 `WISLAND_UPDATE_CONFIG_DIR` 隔离测试数据。
+- `node scripts/test-tray-native.cjs --release --display --runtime --themes`：六种主题 / 边框组合跨窗口同步、宿主属性、合成 Visual 尺寸、设置重建、胶囊定位、侧栏滑动 / 反向动画和 Runtime。增加自己生成的棋盘背景，经 Windows 桌面合成后截图，逐点比较胶囊外像素；展开与收起后都不得出现矩形染色。背景测试窗口在结束或失败时退出。通过 `WISLAND_SETTINGS_CONFIG_DIR`、`CODEX_HOME` 和 `WISLAND_UPDATE_CONFIG_DIR` 隔离测试数据。
 - `cargo test --lib`（在 `src-tauri` 目录）：Rust 回归。
 
 浏览器截图不包含 Windows 合成的桌面毛玻璃。跨机器的首帧、裁切边缘和观感仍需测试版实机验收。
