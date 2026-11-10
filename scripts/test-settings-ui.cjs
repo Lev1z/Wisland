@@ -13,6 +13,18 @@ const { chromium } = require('../target/tray-qa-tools/node_modules/playwright');
     await page.addStyleTag({ content: fs.readFileSync('src/settings.css', 'utf8') });
     await page.evaluate(() => {
       document.getElementById('settings-shell').classList.add('menu-open');
+      // Layout fixtures use the same element classes as the settings renderer.
+      for (const id of ['left-visual-options', 'right-visual-options']) {
+        for (const name of [id.startsWith('left') ? '额度环' : '状态灯', '猫猫挥手', '小狗奔跑']) {
+          const button = document.createElement('button');
+          button.className = 'visual-option';
+          const preview = document.createElement('span'); preview.className = 'visual-native-preview'; preview.textContent = '•';
+          const label = document.createElement('strong'); label.textContent = name;
+          button.append(preview, label); document.getElementById(id).append(button);
+        }
+      }
+      const orderRow = document.createElement('div'); orderRow.className = 'order-row'; orderRow.textContent = '⠿　01　主页';
+      document.getElementById('icon-order-list').append(orderRow);
       window.commands = [];
       window.fixture = { enabled: true, active_app_id: 'cloudmusic.exe', min_ms: -3000, max_ms: 3000, step_ms: 500,
         players: [{app_id:'cloudmusic.exe',ms:0},{app_id:'microsoft.zunemusic_123!microsoft.zunemusic',ms:3000},{app_id:'unknown-player.exe',ms:-3000}] };
@@ -35,8 +47,31 @@ const { chromium } = require('../target/tray-qa-tools/node_modules/playwright');
           document.getElementById(`page-${name}`).classList.add('active');
         }, name);
         assert.ok(await page.locator('.content-body').evaluate(e => e.scrollWidth <= e.clientWidth), `${name} stays within content at ${size.width}`);
+        if (name === 'general' || name === 'custom') {
+          const selectors = name === 'general' ? ['#icon-order-list'] : ['#left-visual-options', '#right-visual-options', '#border-effect-options'];
+          for (const selector of selectors) {
+            const gap = await page.locator(selector).evaluate(e => e.firstElementChild.getBoundingClientRect().top - e.previousElementSibling.getBoundingClientRect().bottom);
+            assert.ok(Math.abs(gap - 14) < 1, `${selector} has 14px below its divider, got ${gap}`);
+          }
+        }
+        if (name === 'custom') {
+          const widths = await page.evaluate(() => ['left-visual-options','right-visual-options','border-effect-options'].map(id => {
+            const el = document.getElementById(id);
+            return [el.firstElementChild.getBoundingClientRect().width, getComputedStyle(el).gridTemplateColumns];
+          }));
+          assert.ok(widths.every(w => Math.abs(w[0] - widths[0][0]) < 1 && w[1] === widths[0][1]), 'visual and border cards share track widths and wrap rules');
+        }
       }
     }
+    await page.evaluate(() => {
+      document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+      document.getElementById('page-custom').classList.add('active');
+      document.getElementById('page-title').textContent = '自定义';
+      document.getElementById('page-description').textContent = '左右动图与动态边框方案。';
+      document.querySelectorAll('.nav-item').forEach(e => e.classList.toggle('active', e.dataset.page === 'custom'));
+    });
+    await page.waitForTimeout(700);
+    await page.screenshot({path:'target/settings-card-spacing-qa.png'});
     assert.equal(await page.locator('#icon-bar-style option[value="option-wheel"]').textContent(), '滚轮菜单');
     assert.equal(await page.locator('#log-level option[value="info"]').textContent(), '信息');
     assert.equal(await page.locator('#clear-codex-status').textContent(), '重置任务状态');
@@ -66,6 +101,6 @@ const { chromium } = require('../target/tray-qa-tools/node_modules/playwright');
     await page.waitForTimeout(700);
     await page.screenshot({path:'target/settings-simplified-qa.png'});
     assert.deepEqual(errors, []);
-    console.log('PASS: 7 settings pages at 3 sizes / stable option values / friendly player names / raw ID tooltips / offset boundaries, saving and removal');
+    console.log('PASS: 7 settings pages at 3 sizes / divider spacing / matching card tracks / stable option values / friendly player names / raw ID tooltips / offset boundaries, saving and removal');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });
